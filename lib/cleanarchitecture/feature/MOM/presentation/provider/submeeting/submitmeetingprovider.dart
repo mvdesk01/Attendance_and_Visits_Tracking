@@ -19,6 +19,7 @@ class MeetingSubmitNotifier extends _$MeetingSubmitNotifier {
     state = state.copyWith(
       isLoading: true,
       error: null,
+      result: null,
     );
 
     try {
@@ -27,11 +28,13 @@ class MeetingSubmitNotifier extends _$MeetingSubmitNotifier {
       state = state.copyWith(
         isLoading: false,
         result: result,
+        error: null,
       );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
         error: e.toString(),
+        result: null,
       );
     }
   }

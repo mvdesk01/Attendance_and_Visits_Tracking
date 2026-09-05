@@ -12,19 +12,25 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity: FlutterFragmentActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "battery_optimization"
+    private val DEVICE_ID_CHANNEL = "com.example/device_id"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            CHANNEL
+        ).setMethodCallHandler { call, result ->
             if (call.method == "requestIgnoreBatteryOptimizations") {
                 val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
                 val packageName = applicationContext.packageName
                 if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:$packageName"))
+                    val intent = Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName")
+                    )
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     startActivity(intent)
                 }
@@ -37,10 +43,27 @@ class MainActivity: FlutterFragmentActivity() {
                 result.notImplemented()
             }
         }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DEVICE_ID_CHANNEL
+        ).setMethodCallHandler { call, result ->
+
+            if (call.method == "getAndroidId") {
+
+                val androidId = Settings.Secure.getString(
+                    contentResolver,
+                    Settings.Secure.ANDROID_ID
+                )
+
+                result.success(androidId)
+
+            } else {
+                result.notImplemented()
+            }
+        }
     }
 }
-
-
 
 
 /*import android.annotation.SuppressLint
@@ -68,15 +91,15 @@ import io.flutter.embedding.android.FlutterActivity*/
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }*/
 
-   /* private val CHANNEL = "com.flutter_attendance/play_integrity_check"
+/* private val CHANNEL = "com.flutter_attendance/play_integrity_check"
 
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
+ override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+     super.configureFlutterEngine(flutterEngine)
+     MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+         .setMethodCallHandler { call, result ->
+             when (call.method) {
 
-                   *//* "checkAppIntegrity" -> {
+                *//* "checkAppIntegrity" -> {
                         checkAppIntegrity(result)
 //                        result.success(null)
                     }*//*

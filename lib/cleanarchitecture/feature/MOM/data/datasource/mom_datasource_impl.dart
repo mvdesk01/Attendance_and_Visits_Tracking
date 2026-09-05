@@ -74,28 +74,68 @@ class MomRemoteDatasourceImpl implements MomRemoteDatasource {
         .toList();
   }
 
+  // @override
+  // Future<String> saveMeeting(
+  //   MeetingRequestModel meeting,
+  // ) async {
+  //   final response = await dio.post(
+  //     "MOMMasterDetails",
+  //     data: meeting.toJson(),
+  //   );
+  //
+  //   return response.data.first["OutMsg"];
+  // }
   @override
   Future<String> saveMeeting(
     MeetingRequestModel meeting,
   ) async {
-    final response = await dio.post(
-      "MOMMasterDetails",
-      data: meeting.toJson(),
-    );
+    try {
+      final response = await dio.post(
+        "MOMMasterDetails",
+        data: meeting.toJson(),
+      );
 
-    return response.data.first["OutMsg"];
+      return response.data.first["OutMsg"]?.toString() ??
+          "Meeting saved successfully.";
+    } on DioException catch (e) {
+      throw _handleDioException(e);
+    } catch (e) {
+      throw Exception(
+        "Unable to save meeting. Please try again.",
+      );
+    }
   }
 
+  // @override
+  // Future<String> saveDiscussionPoint(
+  //   DiscussionPointRequestModel point,
+  // ) async {
+  //   final response = await dio.post(
+  //     "MOMPointsDetails",
+  //     data: point.toJson(),
+  //   );
+  //
+  //   return response.data.first["OutMsg"];
+  // }
   @override
   Future<String> saveDiscussionPoint(
     DiscussionPointRequestModel point,
   ) async {
-    final response = await dio.post(
-      "MOMPointsDetails",
-      data: point.toJson(),
-    );
+    try {
+      final response = await dio.post(
+        "MOMPointsDetails",
+        data: point.toJson(),
+      );
 
-    return response.data.first["OutMsg"];
+      return response.data.first["OutMsg"]?.toString() ??
+          "Discussion point saved successfully.";
+    } on DioException catch (e) {
+      throw _handleDioException(e);
+    } catch (e) {
+      throw Exception(
+        "Unable to save discussion point. Please try again.",
+      );
+    }
   }
 
   @override
@@ -270,5 +310,73 @@ class MomRemoteDatasourceImpl implements MomRemoteDatasource {
       "Failed to add customer. "
       "Status code: ${response.statusCode}",
     );
+  }
+
+  String _handleDioException(DioException e) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+        return "Connection timed out. Please check your internet connection.";
+
+      case DioExceptionType.sendTimeout:
+        return "Request timed out while sending. Please try again.";
+
+      case DioExceptionType.receiveTimeout:
+        return "Server response timed out. Please try again.";
+
+      case DioExceptionType.connectionError:
+        return "Unable to connect to the server. Please check your internet connection.";
+
+      case DioExceptionType.badResponse:
+        final statusCode = e.response?.statusCode;
+
+        switch (statusCode) {
+          case 400:
+            return "Invalid request. Please check the entered information.";
+
+          case 401:
+            return "Unauthorized request. Please login again.";
+
+          case 403:
+            return "You are not authorized to perform this action.";
+
+          case 404:
+            return "Requested service was not found.";
+
+          case 409:
+            return "A conflict occurred. Please try again.";
+
+          case 422:
+            return "The submitted data is invalid.";
+
+          case 429:
+            return "Too many requests. Please try again later.";
+
+          case 500:
+            return "Server error. Please try again later.";
+
+          case 502:
+            return "Server is temporarily unavailable.";
+
+          case 503:
+            return "Service is temporarily unavailable.";
+
+          case 504:
+            return "Server response timed out. Please try again.";
+
+          default:
+            return "Request failed"
+                "${statusCode != null ? " ($statusCode)" : ""}. "
+                "Please try again.";
+        }
+
+      case DioExceptionType.cancel:
+        return "Request was cancelled.";
+
+      case DioExceptionType.badCertificate:
+        return "Unable to establish a secure connection.";
+
+      case DioExceptionType.unknown:
+        return "Something went wrong. Please check your internet connection and try again.";
+    }
   }
 }

@@ -47,7 +47,9 @@ class _MinutesOfTheMeetingFormScreenState
         DateFormat("dd/MM/yyyy").format(DateTime.now());
 
     Future.microtask(() async {
-      await ref.read(customerNotifierProvider.notifier).loadCustomers();
+      await ref
+          .read(customerNotifierProvider.notifier)
+          .loadCustomers(forceRefresh: true);
 
       final customer = ref.read(customerNotifierProvider).selectedCustomer;
 
@@ -438,9 +440,10 @@ class _MinutesOfTheMeetingFormScreenState
             child: TextButton(
               onPressed: () => addNewcustomer(),
               child: Text(
-                "Could not find customer. Add new Customer ",
+                " + Add new Customer Here",
                 style: TextStyle(
                   color: Colors.blue,
+                  decoration: TextDecoration.underline,
                 ),
               ),
             ),
@@ -723,36 +726,6 @@ class _MinutesOfTheMeetingFormScreenState
     );
   }
 
-  // Future<void> addNewcustomer() async {
-  //   final customerData = await _showAddCustomerDialog();
-  //
-  //   if (!mounted || customerData == null) {
-  //     return;
-  //   }
-  //
-  //   print(
-  //     "Customer Name: ${customerData["name"]}",
-  //   );
-  //
-  //   print(
-  //     "Customer Mobile: ${customerData["mobile"]}",
-  //   );
-  //
-  //   print(
-  //     "Customer Address: ${customerData["address"]}",
-  //   );
-  //
-  //   print(
-  //     "Customer Email: ${customerData["email"]}",
-  //   );
-  //
-  //   print(
-  //     "Contact Person: ${customerData["contactPerson"]}",
-  //   );
-  //
-  //   // TODO:
-  //   // Call Add Customer API here.
-  // }
   Future<void> addNewcustomer() async {
     final customerData = await _showAddCustomerDialog();
 
