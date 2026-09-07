@@ -6,7 +6,6 @@ import 'package:attendance_system_ios/bloc/main_bloc.dart';
 import 'package:attendance_system_ios/bloc/main_event.dart';
 import 'package:attendance_system_ios/bloc/main_state.dart';
 import 'package:attendance_system_ios/main.dart';
-import 'package:attendance_system_ios/screen/AdminHomeScreen/AdminHome.dart';
 import 'package:attendance_system_ios/screen/Gate%20Pass/gate_pass.dart';
 import 'package:attendance_system_ios/screen/Home/report.dart';
 import 'package:attendance_system_ios/screen/Leave/leave.dart';
@@ -14,7 +13,6 @@ import 'package:attendance_system_ios/screen/Login/login_screen.dart';
 import 'package:attendance_system_ios/screen/Profile/profile.dart';
 import 'package:attendance_system_ios/screen/Remote%20Location/remote_location.dart';
 import 'package:attendance_system_ios/screen/Transaction/COff%20Debit/CoffDebitScreen.dart';
-import 'package:attendance_system_ios/screen/Transaction/CoffCreditScreen.dart';
 import 'package:attendance_system_ios/screen/Visit%20History/Visit_History_Screen.dart';
 import 'package:attendance_system_ios/service/LocationHandler.dart';
 import 'package:attendance_system_ios/service/WebService.dart';
@@ -34,6 +32,7 @@ import 'package:loading_overlay/loading_overlay.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../database/database_helper.dart';
 import '../../model/in_out_details.dart';
 // import '../CancellationRequest/CancellationRequestScreen.dart';
 import '../../service/background_service.dart';
@@ -41,6 +40,7 @@ import '../../service/internet_service.dart';
 import '../AdminProfile/Databasepunchout.dart';
 import '../AdminProfile/Databsepunchin.dart';
 import '../Expense/ExpenseScreen.dart';
+import '../MOM/minuetsmeeting_screen.dart';
 import '../Settings/Timer.dart';
 import '../Tour/TourmainScreen.dart';
 import '../Visit/Start Stop Visit/start_stop_visit.dart';
@@ -57,7 +57,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String todayDate =
-  DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 10);
+      DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 10);
   String currentTime = DateFormat('dd-MM-yyyy HH:mm:ss')
       .format(DateTime.now())
       .substring(10, 19);
@@ -175,7 +175,131 @@ class _HomeScreenState extends State<HomeScreen> {
     await _checkauthorisation();
     await getData();
     await _checkAndRequestLocationPermission();
-    await _updateButtonInitialState();
+
+    await _restorePunchState();
+    // await _updateButtonInitialsqliteState();
+    // await _updateButtonInitialState();
+  }
+
+  Future<void> _restorePunchState() async {
+    if (staffCode == null || staffCode!.isEmpty) return;
+
+    final dbHelper = DatabaseHelper();
+
+    // First priority: existing local SQLite state
+    final localPunch = await dbHelper.getLatestPunchState(staffCode!);
+
+    if (localPunch != null) {
+      await _updateButtonInitialsqliteState();
+      return;
+    }
+
+    // SQLite empty = fresh install / database cleared
+    try {
+      final latestServerPunch = await getLatestPunchFromServer();
+
+      if (latestServerPunch != null) {
+        await dbHelper.insertPunchState(
+          staffCode: staffCode!,
+          transactionDate: latestServerPunch['transactionDate'],
+          transactionTime: latestServerPunch['transactionTime'],
+          flagValue: latestServerPunch['flagValue'],
+          shiftDate: latestServerPunch['shiftDate'],
+          shiftType: latestServerPunch['shiftType'],
+        );
+      }
+    } catch (e) {
+      print("Error restoring punch state: $e");
+    }
+
+    await _updateButtonInitialsqliteState();
+  }
+
+  Future<Map<String, dynamic>?> getLatestPunchFromServer() async {
+    try {
+      final now = DateTime.now();
+
+      final fromDate = DateFormat('dd/MM/yyyy').format(
+        now.subtract(const Duration(days: 1)),
+      );
+
+      final toDate = DateFormat('dd/MM/yyyy').format(now);
+
+      final response = await http
+          .post(
+            Uri.parse(
+              'http://114.143.140.28:8091/api/InOut/InOutDetails',
+            ),
+            headers: {
+              "Content-Type": "application/json",
+              'Authorization': 'Bearer $Auth_Token',
+            },
+            body: jsonEncode({
+              "staffCode": staffCode,
+              "fromDate": fromDate,
+              "toDate": toDate,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      print("========== RESTORE PUNCH ==========");
+      print("Staff Code: $staffCode");
+      print("From Date: $fromDate");
+      print("To Date: $toDate");
+      print("Response Status: ${response.statusCode}");
+      print("Response Body: ${response.body}");
+      print("==================================");
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        return null;
+      }
+
+      final decoded = jsonDecode(response.body);
+      final List<dynamic> data = decoded['data'] ?? [];
+
+      if (data.isEmpty) {
+        return null;
+      }
+
+      final dateFormat = DateFormat('dd/MM/yyyy HH:mm:ss');
+
+      // Find actual latest transaction
+      data.sort((a, b) {
+        final dateA = dateFormat.parse(
+          a['transactionTime'].toString(),
+        );
+
+        final dateB = dateFormat.parse(
+          b['transactionTime'].toString(),
+        );
+
+        return dateB.compareTo(dateA);
+      });
+
+      final latest = data.first;
+
+      final transactionDateTime = dateFormat.parse(
+        latest['transactionTime'].toString(),
+      );
+
+      final String flagValue =
+          latest['inOut'].toString().toUpperCase() == 'IN' ? '001' : '000';
+
+      print("RESTORE latest transaction: ${latest['transactionTime']}");
+      print("RESTORE latest flag: $flagValue");
+
+      return {
+        'transactionDate':
+            DateFormat('dd-MM-yyyy HH:mm:ss').format(transactionDateTime),
+        'transactionTime': DateFormat('HH:mm:ss').format(transactionDateTime),
+        'flagValue': flagValue,
+        'shiftDate': DateFormat('dd/MM/yyyy').format(transactionDateTime),
+        'shiftType': null,
+      };
+    } catch (e) {
+      print("Error restoring latest punch from server: $e");
+      return null;
+    }
   }
 
   Future<void> _checkauthorisation() async {
@@ -250,7 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!hasPermission) {
       Fluttertoast.showToast(
         msg:
-        "Allow location permission from settings to use Punch-In Punch-Out feature!",
+            "Allow location permission from settings to use Punch-In Punch-Out feature!",
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         fontSize: 14.0,
@@ -265,22 +389,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Format the date to 'dd/MM/yyyy' format as required by the API
       String formattedFromDate =
-      DateFormat('dd/MM/yyyy').format(DateTime.now());
+          DateFormat('dd/MM/yyyy').format(DateTime.now());
       String formattedToDate = DateFormat('dd/MM/yyyy').format(DateTime.now());
 
       final response = await http
           .post(
-        Uri.parse('http://114.143.140.28:8091/api/InOut/InOutDetails'),
-        headers: {
-          "Content-Type": "application/json",
-          'Authorization': 'Bearer $Auth_Token'
-        },
-        body: jsonEncode({
-          "staffCode": staffCode,
-          "fromDate": formattedFromDate,
-          "toDate": formattedToDate,
-        }),
-      )
+            Uri.parse('http://114.143.140.28:8091/api/InOut/InOutDetails'),
+            headers: {
+              "Content-Type": "application/json",
+              'Authorization': 'Bearer $Auth_Token'
+            },
+            body: jsonEncode({
+              "staffCode": staffCode,
+              "fromDate": formattedFromDate,
+              "toDate": formattedToDate,
+            }),
+          )
           .timeout(const Duration(seconds: 15));
 
       print("home inout details statuscode: ${response.statusCode}");
@@ -290,7 +414,7 @@ class _HomeScreenState extends State<HomeScreen> {
         List<dynamic> data = decoded['data'] ?? [];
 
         List<InOutDetail> details =
-        data.map((item) => InOutDetail.fromJson(item)).toList();
+            data.map((item) => InOutDetail.fromJson(item)).toList();
 
         setState(() {
           isLoading = false;
@@ -436,7 +560,7 @@ class _HomeScreenState extends State<HomeScreen> {
             end: Alignment.bottomRight,
           ),
           borderRadius:
-          BorderRadius.circular(8), // ✅ rounded gradient background
+              BorderRadius.circular(8), // ✅ rounded gradient background
         ),
         padding: EdgeInsets.all(16),
         child: Text(
@@ -536,7 +660,6 @@ class _HomeScreenState extends State<HomeScreen> {
     mainBloc = BlocProvider.of(context);
     isTablet = MediaQuery.of(context).size.width >= 600;
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
         actions: <Widget>[
           Padding(
@@ -556,7 +679,7 @@ class _HomeScreenState extends State<HomeScreen> {
           color: Colors.white,
           size: 28,
         ),
-        title: const Text("Attendance(kd)"),
+        title: const Text("Attendance"),
         backgroundColor: MyColors.darkBlue,
         centerTitle: true,
         titleTextStyle: GoogleFonts.roboto(
@@ -576,7 +699,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(children: [
                   const Padding(padding: EdgeInsets.symmetric(vertical: 8)),
                   const Text(
-                    "Attendance(kd)",
+                    "Attendance",
                     style: TextStyle(
                         color: Colors.white,
                         fontSize: 20.0,
@@ -601,7 +724,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         CircleAvatar(
                           radius: 52,
                           backgroundImage:
-                          AssetImage("assets/icons/profile.png"),
+                              AssetImage("assets/icons/profile.png"),
                         ),
                         Text(
                           "${staffName!}",
@@ -775,8 +898,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     context,
                     MaterialPageRoute(
                         builder: (context) => VisitStartStopScreen(
-                          visit: null,
-                        )));
+                              visit: null,
+                            )));
                 //  mainBloc.add(GetMinutesOfMeetingFormNoEvents(UserId: "cd03080",SrNo: "844",token: Auth_Token!));
               },
             ),
@@ -799,6 +922,21 @@ class _HomeScreenState extends State<HomeScreen> {
                               return MainBloc(webService: WebService());
                             },
                             child: VisitHistoryScreen())));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.location_history_outlined),
+              title: const Text('Minutes Of Meeting'),
+              onTap: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => BlocProvider(
+                              create: (context) {
+                                return MainBloc(webService: WebService());
+                              },
+                              child: MinutesOfTheMeetingFormScreen(),
+                            )));
               },
             ),
             ListTile(
@@ -947,6 +1085,37 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<String?> getShiftType(String date) async {
+    try {
+      final uri = Uri.parse(
+        'http://114.143.140.28:8091 /api/InOut/CheckShiftType',
+      ).replace(
+        queryParameters: {
+          'staffCode': staffCode!,
+          'dateValue': date,
+        },
+      );
+
+      final response = await http.get(uri);
+      print("CheckShiftType status: ${uri}");
+      print("CheckShiftType status: ${response.statusCode}");
+      print("CheckShiftType response: ${response.body}");
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+
+        if (decoded['status'] == true) {
+          return decoded['data']['shiftType']?.toString();
+        }
+      }
+
+      return null;
+    } catch (e) {
+      print("CheckShiftType error: $e");
+      return null;
+    }
+  }
+
   _homescreen() {
     return LoadingOverlay(
       isLoading: _isLoading,
@@ -1044,7 +1213,7 @@ class _HomeScreenState extends State<HomeScreen> {
               isLoading = true;
             });
           } else if (state is GetMultiRemoteLocationLoadedState) {
-            if(state.response != null) {
+            if (state.response != null) {
               multiLatLongList = state.response;
             }
             setState(() {
@@ -1114,10 +1283,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             },
                             child: CircleAvatar(
                               radius: 22,
-                              backgroundColor: Colors.blue.shade100,
+                              backgroundColor: MyColors.darkBlue,
                               child: const Icon(
                                 Icons.person_outline,
-                                color: Colors.blue,
+                                color: Colors.white,
                                 size: 26,
                               ),
                             ),
@@ -1175,7 +1344,7 @@ class _HomeScreenState extends State<HomeScreen> {
 */
 
                     SizedBox(
-                      height: isTablet ? 300 : 190,
+                      height: isTablet ? 300 : 210,
                       child: PageView.builder(
                         controller: _pageController,
                         itemCount: attendanceBanners.length,
@@ -1278,7 +1447,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           color: Colors.blueAccent
                                               .withOpacity(0.1),
                                           borderRadius:
-                                          BorderRadius.circular(8),
+                                              BorderRadius.circular(8),
                                         ),
                                         child: const Icon(
                                           Icons.backpack_outlined,
@@ -1291,7 +1460,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     const Expanded(
                                       child: Column(
                                         crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             "Leave",
@@ -1346,7 +1515,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           color: Colors.blueAccent
                                               .withOpacity(0.1),
                                           borderRadius:
-                                          BorderRadius.circular(8),
+                                              BorderRadius.circular(8),
                                         ),
                                         child: const Icon(
                                           Icons.book_outlined,
@@ -1359,7 +1528,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     const Expanded(
                                       child: Column(
                                         crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             "Gate Pass",
@@ -1471,18 +1640,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onPressed: isButtonDisabledIn
                                     ? null
                                     : () async {
-                                  Navigator.of(context).pop();
-                                  setState(() {
-                                    isLoading =
-                                    true; // Show progress indicator
-                                  });
-                                  await checkBiometrics();
-                                  //await punchIn();
-                                  setState(() {
-                                    isLoading =
-                                    false; // Show progress indicator
-                                  });
-                                },
+                                        Navigator.of(context).pop();
+                                        setState(() {
+                                          isLoading =
+                                              true; // Show progress indicator
+                                        });
+                                        await checkBiometrics();
+                                        //await punchIn();
+                                        setState(() {
+                                          isLoading =
+                                              false; // Show progress indicator
+                                        });
+                                      },
                                 child: const Text("OK"),
                                 /* isLoading
                                           ? CircularProgressIndicator()
@@ -1616,18 +1785,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onPressed: isButtonDisabledOut
                                     ? null
                                     : () async {
-                                  Navigator.of(context).pop();
-                                  setState(() {
-                                    isLoading =
-                                    true; // Show progress indicator
-                                  });
-                                  await checkbiometricspunchout();
-                                  //await punchOut();
-                                  setState(() {
-                                    isLoading =
-                                    false; // Show progress indicator
-                                  });
-                                },
+                                        Navigator.of(context).pop();
+                                        setState(() {
+                                          isLoading =
+                                              true; // Show progress indicator
+                                        });
+                                        await checkbiometricspunchout();
+                                        //await punchOut();
+                                        setState(() {
+                                          isLoading =
+                                              false; // Show progress indicator
+                                        });
+                                      },
                                 child: const Text("OK"),
                               ),
                               /*   TextButton(onPressed: () {
@@ -1806,7 +1975,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           Text(
                             'Schedule your visit',
                             style:
-                            TextStyle(fontSize: 14, color: Colors.black54),
+                                TextStyle(fontSize: 14, color: Colors.black54),
                           ),
                         ],
                       ),
@@ -1872,7 +2041,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           Text(
                             'Start and Stop your active visit',
                             style:
-                            TextStyle(fontSize: 14, color: Colors.black54),
+                                TextStyle(fontSize: 14, color: Colors.black54),
                           ),
                         ],
                       ),
@@ -1940,7 +2109,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           Text(
                             'Track your visit history location',
                             style:
-                            TextStyle(fontSize: 14, color: Colors.black54),
+                                TextStyle(fontSize: 14, color: Colors.black54),
                           ),
                         ],
                       ),
@@ -1958,7 +2127,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _reloadPage() {
-    _updateButtonInitialState();
+    _restorePunchState();
+    //_updateButtonInitialsqliteState();
+    // _updateButtonInitialState();
     // setState(() {
     //   isLoading = true;
     // });
@@ -2033,7 +2204,8 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             isButtonDisabledIn = true;
             isButtonDisabledOut = false;
-            _updateButtonInitialState();
+            _updateButtonInitialsqliteState();
+            //  _updateButtonInitialState();
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -2112,6 +2284,9 @@ class _HomeScreenState extends State<HomeScreen> {
 //             await retorepunchdata();
             if (await getInEntryFromDataBase(
                 currentDate, currentTime, staffCode!)) {
+              String shiftDate =
+                  DateFormat('dd/MM/yyyy').format(DateTime.now());
+              String? shiftType = await getShiftType(shiftDate);
               String? result = await storeInEntry(
                   currentDate,
                   currentDateTime,
@@ -2129,7 +2304,8 @@ class _HomeScreenState extends State<HomeScreen> {
               setState(() {
                 isButtonDisabledIn = true;
                 isButtonDisabledOut = false;
-                _updateButtonInitialState();
+                _updateButtonInitialsqliteState();
+                //  _updateButtonInitialState();
               });
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -2147,7 +2323,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                     content:
-                    const Text('Already Marked!! or First Punch Out!!'),
+                        const Text('Already Marked!! or First Punch Out!!'),
                     action: SnackBarAction(
                         label: 'X',
                         onPressed: () {
@@ -2177,8 +2353,12 @@ class _HomeScreenState extends State<HomeScreen> {
           _currentLat = LocationHandler.currentLat.toString();
           _currentLon = LocationHandler.currentLon.toString();
           _currentAddress = LocationHandler.currentAddress;
-          String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 19);
-          String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 19);
+          String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss')
+              .format(DateTime.now())
+              .substring(0, 19);
+          String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss')
+              .format(DateTime.now())
+              .substring(0, 19);
 
           String? result = await storeNotInZoneEntry(
               currentDate,
@@ -2245,8 +2425,21 @@ class _HomeScreenState extends State<HomeScreen> {
             .substring(0, 19);
         // await retorepunchoutdata();
 
-        if (await getOutEntryFromDataBase(
-            currentDate, currentTime, staffCode!)) {
+        // if (await getOutEntryFromDataBase(
+        //     currentDate, currentTime, staffCode!)) {
+        //   String? result = await storeOutEntry(
+        //       currentDate,
+        //       currentDateTime,
+        //       staffCode!,
+        //       "000",
+        //       _currentAddress!,
+        //       _currentLat!,
+        //       _currentLon!,
+        //       plantcode?.toString() ?? "01");
+        final latestPunch =
+            await DatabaseHelper().getLatestPunchState(staffCode!);
+
+        if (latestPunch != null && latestPunch['flag_value'] == "001") {
           String? result = await storeOutEntry(
               currentDate,
               currentDateTime,
@@ -2263,7 +2456,8 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             isButtonDisabledIn = true;
             isButtonDisabledOut = false;
-            _updateButtonInitialState();
+            _updateButtonInitialsqliteState();
+            //  _updateButtonInitialState();
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -2338,8 +2532,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 .substring(0, 19);
             // await retorepunchoutdata();
 
-            if (await getOutEntryFromDataBase(
-                currentDate, currentTime, staffCode!)) {
+            // if (await getOutEntryFromDataBase(
+            //     currentDate, currentTime, staffCode!)) {
+            //   String? result = await storeOutEntry(
+            //       currentDate,
+            //       currentDateTime,
+            //       staffCode!,
+            //       "000",
+            //       _currentAddress!,
+            //       _currentLat!,
+            //       _currentLon!,
+            //       plantcode?.toString() ?? "01");
+            final latestPunch =
+                await DatabaseHelper().getLatestPunchState(staffCode!);
+
+            if (latestPunch != null && latestPunch['flag_value'] == "001") {
               String? result = await storeOutEntry(
                   currentDate,
                   currentDateTime,
@@ -2353,6 +2560,7 @@ class _HomeScreenState extends State<HomeScreen> {
               setState(() {
                 isButtonDisabledOut = true;
                 isButtonDisabledIn = false;
+                _updateButtonInitialsqliteState();
                 _updateButtonInitialState();
               });
               ScaffoldMessenger.of(context).showSnackBar(
@@ -2553,6 +2761,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         LogFileManager.writeLog("storeinentry $response");
+        String shiftDate = DateFormat('dd/MM/yyyy').format(DateTime.now());
+        String? shiftType = await getShiftType(shiftDate);
+        await DatabaseHelper().insertPunchState(
+          staffCode: staffCode!,
+          transactionDate: TransactionDate,
+          transactionTime: TransactionTime,
+          flagValue: "001",
+          shiftDate: shiftDate,
+          shiftType: shiftType,
+        );
         if (atsflag == 'Y') {
           try {
             final response = await http.post(
@@ -2630,6 +2848,23 @@ class _HomeScreenState extends State<HomeScreen> {
       print("punch-out response body" + response.body);
       print("punch-out response status code" + response.statusCode.toString());
       if (response.statusCode == 201 || response.statusCode == 200) {
+        final latestIn = await DatabaseHelper().getLatestPunchIn(staffCode!);
+        String? shiftType = latestIn?['shift_type'];
+        String? shiftDate = latestIn?['shift_date'];
+        if ((shiftType == null || shiftType.isEmpty) &&
+            shiftDate != null &&
+            shiftDate.isNotEmpty) {
+          shiftType = await getShiftType(shiftDate);
+        }
+
+        await DatabaseHelper().insertPunchState(
+          staffCode: staffCode!,
+          transactionDate: TransactionDate,
+          transactionTime: TransactionTime,
+          flagValue: "000",
+          shiftDate: shiftDate,
+          shiftType: shiftType,
+        );
         LogFileManager.writeLog("storeoutentry $response");
         if (atsflag == 'Y') {
           try {
@@ -2758,7 +2993,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return AlertDialog(
           title: const Text("Stop Visit Tracking"),
           content:
-          const Text("Are you sure you want to stop tracking the visit?"),
+              const Text("Are you sure you want to stop tracking the visit?"),
           actions: [
             TextButton(
               onPressed: () {
@@ -2803,7 +3038,7 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               child: LoginScreen()),
         ),
-            (Route<dynamic> route) => false);
+        (Route<dynamic> route) => false);
   }
 
   // Function to clear specific keys
@@ -2823,9 +3058,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> retorepunchdata() async {
-    final dbHelper = DatabaseHelper();
+    final dbHelper = DatabaseHelperPunchIn();
     List<Map<String, dynamic>> offlineEntries =
-    await dbHelper.getOfflinePunchEntries();
+        await dbHelper.getOfflinePunchEntries();
 
     for (var entry in offlineEntries) {
       try {
@@ -2852,7 +3087,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Only update UI if this was the most recent operation
           final lastEntry =
-          await dbHelper.getLastPunchEntry(entry['staff_code']);
+              await dbHelper.getLastPunchEntry(entry['staff_code']);
           if (lastEntry != null && lastEntry['id'] == entry['id']) {
             setState(() {
               if (entry['flag_value'] == "001") {
@@ -2874,7 +3109,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> retorepunchoutdata() async {
     final dbHelper = DatabaseHelperPunchout();
     List<Map<String, dynamic>> offlineEntries =
-    await dbHelper.getOfflinePunchoutEntries();
+        await dbHelper.getOfflinePunchoutEntries();
 
     for (var entry in offlineEntries) {
       try {
@@ -2901,7 +3136,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Only update UI if this was the most recent operation
           final lastEntry =
-          await dbHelper.getLastPunchoutEntry(entry['staff_code']);
+              await dbHelper.getLastPunchoutEntry(entry['staff_code']);
           if (lastEntry != null && lastEntry['id'] == entry['id']) {
             setState(() {
               if (entry['flag_value'] == "001") {
@@ -2921,15 +3156,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> sqlitePunchIN(
-      String transactionDate,
-      String transactionTime,
-      String staffCode,
-      String flagvalue,
-      String address,
-      String latitude,
-      String longitude,
-      ) async {
-    final dbHelper = DatabaseHelper();
+    String transactionDate,
+    String transactionTime,
+    String staffCode,
+    String flagvalue,
+    String address,
+    String latitude,
+    String longitude,
+  ) async {
+    final dbHelper = DatabaseHelperPunchIn();
 
     // Check if entry already exists
     bool exists = await dbHelper.checkDuplicateEntry(
@@ -2979,7 +3214,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Check if entry already exists
     bool exists =
-    await dbHelper.checkDuplicatePunchOut(staffCode, transactionDate, s);
+        await dbHelper.checkDuplicatePunchOut(staffCode, transactionDate, s);
     if (exists) {
       LogFileManager.writeLog(
           "Duplicate offline entry skipped for $staffCode on $transactionDate with flag $s");
@@ -3018,7 +3253,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bool canCheckBiometrics = await auth.canCheckBiometrics;
       if (canCheckBiometrics) {
         List<BiometricType> availableBiometrics =
-        await auth.getAvailableBiometrics();
+            await auth.getAvailableBiometrics();
         print("Available biometrics: $availableBiometrics");
         LogFileManager.writeLog("Available biometrics: $availableBiometrics");
         //LogFileManager.saveData("Available biometrics: $availableBiometrics","hereeeee");
@@ -3138,11 +3373,11 @@ class _HomeScreenState extends State<HomeScreen> {
             print("An unexpected error occurred: ${e.message}");
             LogFileManager.writeLog(
                 "An unexpected error occurred: ${e.message}");
-        // Fluttertoast.showToast(
-        //   msg: "An unexpected error occurred: ${e.message}",
-        //   toastLength: Toast.LENGTH_LONG,
-        //   timeInSecForIosWeb: 1,
-        // );
+          // Fluttertoast.showToast(
+          //   msg: "An unexpected error occurred: ${e.message}",
+          //   toastLength: Toast.LENGTH_LONG,
+          //   timeInSecForIosWeb: 1,
+          // );
         }
       }
     }
@@ -3153,7 +3388,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bool canCheckBiometrics = await auth.canCheckBiometrics;
       if (canCheckBiometrics) {
         List<BiometricType> availableBiometrics =
-        await auth.getAvailableBiometrics();
+            await auth.getAvailableBiometrics();
         print("Available biometrics: $availableBiometrics");
         LogFileManager.writeLog("Available biometrics: $availableBiometrics");
         //LogFileManager.saveData("Available biometrics: $availableBiometrics","hereeeee");
@@ -3273,14 +3508,97 @@ class _HomeScreenState extends State<HomeScreen> {
             print("An unexpected error occurred: ${e.message}");
             LogFileManager.writeLog(
                 "An unexpected error occurred: ${e.message}");
-        // Fluttertoast.showToast(
-        //   msg: "An unexpected error occurred: ${e.message}",
-        //   toastLength: Toast.LENGTH_LONG,
-        //   timeInSecForIosWeb: 1,
-        // );
+          // Fluttertoast.showToast(
+          //   msg: "An unexpected error occurred: ${e.message}",
+          //   toastLength: Toast.LENGTH_LONG,
+          //   timeInSecForIosWeb: 1,
+          // );
         }
       }
     }
+  }
+
+  Future<void> _updateButtonInitialsqliteState() async {
+    if (staffCode == null || staffCode!.isEmpty) return;
+
+    final dbHelper = DatabaseHelper();
+
+    final latestPunch = await dbHelper.getLatestPunchState(staffCode!);
+
+    final latestIn = await dbHelper.getLatestPunchIn(staffCode!);
+
+    final latestOut = await dbHelper.getLatestPunchOut(staffCode!);
+
+    String extractTime(dynamic value) {
+      if (value == null) return "-";
+
+      final text = value.toString().trim();
+
+      if (text.isEmpty) return "-";
+
+      if (text.contains(' ')) {
+        return text.split(RegExp(r'\s+')).last;
+      }
+
+      return text;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      lastInTime = extractTime(latestIn?['transaction_time']);
+      lastOutTime = extractTime(latestOut?['transaction_time']);
+
+      if (latestPunch == null) {
+        isButtonDisabledIn = false;
+        isButtonDisabledOut = true;
+
+        lastPunchIn = true;
+        lastPunchOut = true;
+
+        return;
+      }
+
+      final flagValue = latestPunch['flag_value'];
+
+      if (flagValue == "001") {
+        isButtonDisabledIn = true;
+        isButtonDisabledOut = false;
+
+        lastPunchIn = false;
+        lastPunchOut = true;
+      } else if (flagValue == "000") {
+        isButtonDisabledIn = false;
+        isButtonDisabledOut = true;
+
+        lastPunchIn = true;
+        lastPunchOut = false;
+      }
+    });
+
+    // setState(() {
+    //   // Display latest IN and OUT independently
+    //   lastInTime = latestIn?['transaction_time'] ?? "-";
+    //   lastOutTime = latestOut?['transaction_time'] ?? "-";
+    //
+    //   // Button state is based ONLY on latest transaction
+    //   if (latestPunch == null) {
+    //     isButtonDisabledIn = false;
+    //     isButtonDisabledOut = true;
+    //     return;
+    //   }
+    //
+    //   final flagValue = latestPunch['flag_value'];
+    //
+    //   if (flagValue == "001") {
+    //     // Currently punched IN
+    //     isButtonDisabledIn = true;
+    //     isButtonDisabledOut = false;
+    //   } else if (flagValue == "000") {
+    //     // Currently punched OUT
+    //     isButtonDisabledIn = false;
+    //     isButtonDisabledOut = true;
+    //   }
+    // });
   }
 }
 
@@ -3290,722 +3608,3 @@ class _BannerItem {
 
   _BannerItem({required this.image, required this.text});
 }
-
-/// old punch in-out code
-/*
-Future<void> punchIn() async {
-  bool hasPermission = await handleLocationPermission();
-
-  if (!hasPermission) {
-    _showSnackbar("Location permission required for Punch In!.Please allow from settings");
-    return;
-  }
-
-  if(DISTANCEFLAG == 'Y'){
-    print("errorrr0N");
-    if(ADDRESSFLAG == 'Y') {
-      print("errorrr0NY");
-
-      LocationHandler.changeToRemoteLocation();
-
-      LocationHandler.remoteZoneLat = double.parse(REMOTELAT);
-      LocationHandler.remoteZoneLon = double.parse(REMOTELONG);
-      try {
-        _currentLat = LocationHandler.currentLat.toString();
-        _currentLon = LocationHandler.currentLon.toString();
-        _currentAddress = LocationHandler.currentAddress;
-        LogFileManager.writeLog("punch in N Y"+_currentLat! + _currentLon! + _currentAddress!);
-
-        print(_currentLat);
-        print(_currentLon);
-        print(_currentAddress);
-
-        String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-            DateTime.now()).substring(0, 10);
-        String currentTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-            DateTime.now()).substring(11, 19);
-        String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-            DateTime.now()).substring(0, 19);
-        print(currentDate);
-        print(currentTime);
-        print(currentDateTime);
-        print(_currentAddress);
-        await retorepunchdata();
-        if (await getInEntryFromDataBase(currentDate, currentTime, staffCode!)) {
-          String? result = await storeInEntry(
-              currentDate,
-              currentDateTime,
-              staffCode!,
-              "001",
-              _currentAddress!,
-              _currentLat!,
-              _currentLon!,
-              plantcode?.toString() ?? "01"
-          );
-
-          print("result $result");
-          // After successful operation, show a SnackBar
-          setState(() {
-            isButtonDisabledIn = true;
-            isButtonDisabledOut = false;
-            _updateButtonInitialState();
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: const Text('Punch-in Successful!'),
-                action: SnackBarAction(label: 'OK', onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                }),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch in try flag y result if $result");
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: const Text('Already Marked!! or First Punch Out!!'),
-                action: SnackBarAction(label: 'X', onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                }),
-                backgroundColor: Colors.redAccent,
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch in try flag Y else result ");
-        }
-      } catch (e) {
-        print("Error: $e");
-
-        // If there is an error, show a SnackBar with the error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Punch-in failed! Please try again.'),
-              duration: const Duration(seconds: 3)
-          ),
-        );
-        LogFileManager.writeLog("punch in catch flag N catch Error: $e");
-      } finally{
-        setState(() {
-          isLoading=false;
-        });
-      }
-    }
-    else{
-      try {
-        await LocationHandler.checkIfInZone();
-        _currentLat = LocationHandler.currentLat.toString();
-        _currentLon = LocationHandler.currentLon.toString();
-        _currentAddress = LocationHandler.currentAddress;
-        LogFileManager.writeLog("punch in N y else"+_currentLat! + _currentLon! + _currentAddress!);
-
-        String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 10);
-        String currentTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(11, 19);
-        String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 19);
-        await retorepunchdata();
-        if (await getInEntryFromDataBase(currentDate, currentTime, staffCode!)) {
-          String? result = await storeInEntry(currentDate, currentDateTime, staffCode!, "001", _currentAddress!, _currentLat!, _currentLon!,
-              plantcode?.toString() ?? "01"
-
-          );
-
-          print("result $result");
-
-          // After successful operation, show a SnackBar
-          setState(() {
-            isButtonDisabledIn = true;
-            isButtonDisabledOut = false;
-            _updateButtonInitialState();
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: const Text('Punch-in Successful!'),
-                action: SnackBarAction(label: 'OK', onPressed: (){ScaffoldMessenger.of(context).hideCurrentSnackBar();}),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch in flag Y try if: $result");
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: const Text('Already Marked!! or First Punch Out!!'),
-                action: SnackBarAction(label: 'X', onPressed: (){ScaffoldMessenger.of(context).hideCurrentSnackBar();}),
-                backgroundColor: Colors.redAccent,
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch in flag Y try else ");
-        }
-      } catch (e) {
-        print("Error: $e");
-
-        // If there is an error, show a SnackBar with the error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Punch-in failed! Please try again.'),
-              duration: const Duration(seconds: 3)
-          ),
-        );
-        print(_currentLat);
-        print(_currentLon);
-        print(_currentAddress);
-        print(staffCode);
-        print("actual location flag N catch $e");
-        LogFileManager.writeLog("actual location flag N catch $e");
-      } finally{
-        setState(() {
-          isLoading = false;
-        });
-      }
-    }
-  }
-  else{
-    print("errorrr0001");
-    if(ADDRESSFLAG == 'Y'){
-      print("errorrr0002");
-
-      LocationHandler.changeToRemoteLocation();
-      LocationHandler.remoteZoneLat = double.parse(REMOTELAT);
-      LocationHandler.remoteZoneLon = double.parse(REMOTELONG);
-      // _currentAddress = REMOTELOCATION.toString();
-      bool ifInZone = await LocationHandler.checkIfInZone();
-      print(ifInZone);
-      if(ifInZone) {
-        // Simulate API calls
-        try {
-          _currentLat = LocationHandler.currentLat.toString();
-          _currentLon = LocationHandler.currentLon.toString();
-          _currentAddress = LocationHandler.currentAddress;
-          LogFileManager.writeLog("punch in Y"+_currentLat! + _currentLon! + _currentAddress!);
-
-          String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 10);
-          String currentTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(11, 19);
-          String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 19);
-//if (await getOutEntryFromDataBase(currentDate, currentTime, staffCode!))
-          await retorepunchdata();
-          if (await getInEntryFromDataBase(currentDate, currentTime, staffCode!)) {
-            String? result = await storeInEntry(currentDate, currentDateTime, staffCode!, "001", _currentAddress!, _currentLat!, _currentLon!,plantcode?.toString() ?? "01"
-            );
-            print(currentDate);
-            print(currentTime);
-            print(currentDateTime);
-            print(_currentAddress);
-            // After successful operation, show a SnackBar
-            setState(() {
-              isButtonDisabledIn = true;
-              isButtonDisabledOut = false;
-              _updateButtonInitialState();
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: const Text('Punch-in Successful!'),
-                  action: SnackBarAction(label: 'OK', onPressed: (){ScaffoldMessenger.of(context).hideCurrentSnackBar();}),
-                  backgroundColor: Colors.green,
-                  duration: const Duration(seconds: 3)
-              ),
-            );
-            LogFileManager.writeLog("punch in flag N else if try: $result");
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: const Text('Already Marked!! or First Punch Out!!'),
-                  action: SnackBarAction(label: 'X', onPressed: (){ScaffoldMessenger.of(context).hideCurrentSnackBar();}),
-                  backgroundColor: Colors.redAccent,
-                  duration: const Duration(seconds: 3)
-              ),
-            );
-          }
-          LogFileManager.writeLog("punch in flag N else if else");
-        } catch (e) {
-          print("Error: $e");
-
-          // If there is an error, show a SnackBar with the error message
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Punch-in failed! Please try again.'),
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch in flag N else catch Error: $e");
-        } finally{
-          setState(() {
-            isLoading = false;
-          });
-        }
-      } else{
-        Fluttertoast.showToast(
-            msg: "Not in zone!!",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            timeInSecForIosWeb: 1,
-            // textColor: Colors.white,
-            fontSize: 12.0
-        );
-        LogFileManager.writeLog("punch in flag y not in zone");
-        print("Not in zone");
-      }
-    }
-    else{
-      bool ifInZone = await LocationHandler.checkIfInZone();
-      if(ifInZone) {
-        try {
-          _currentLat = LocationHandler.currentLat.toString();
-          _currentLon = LocationHandler.currentLon.toString();
-          _currentAddress = LocationHandler.currentAddress;
-          print(_currentLat);
-          print(_currentLon);
-          print(_currentAddress);
-          LogFileManager.writeLog("punch in else y  else"+_currentLat! + _currentLon! + _currentAddress!);
-
-          String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-              DateTime.now()).substring(0, 10);
-          String currentTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-              DateTime.now()).substring(11, 19);
-          String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-              DateTime.now()).substring(0, 19);
-          await retorepunchdata();
-          if (await getInEntryFromDataBase(
-              currentDate, currentTime, staffCode!)) {
-            String? result = await storeInEntry(
-                currentDate,
-                currentDateTime,
-                staffCode!,
-                "001",
-                _currentAddress!,
-                _currentLat!,
-                _currentLon!,
-                plantcode?.toString() ?? "01"
-
-            );
-
-            print("result $result");
-
-            // After successful operation, show a SnackBar
-            setState(() {
-              isButtonDisabledIn = true;
-              isButtonDisabledOut = false;
-              _updateButtonInitialState();
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: const Text('Punch-in Successful!'),
-                  action: SnackBarAction(label: 'OK', onPressed: () {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  }),
-                  backgroundColor: Colors.green,
-                  duration: const Duration(seconds: 3)
-              ),
-            );
-            LogFileManager.writeLog("punch in flag N else actual location: $result");
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: const Text(
-                      'Already Marked!! or First Punch Out!!'),
-                  action: SnackBarAction(label: 'X', onPressed: () {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  }),
-                  backgroundColor: Colors.redAccent,
-                  duration: const Duration(seconds: 3)
-              ),
-            );
-          }
-        } catch (e) {
-          print("Error: $e");
-
-          // If there is an error, show a SnackBar with the error message
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Punch-in failed! Please try again.'),
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch in flag N else actual location catch: $e");
-
-        } finally{
-          setState(() {
-            isLoading = false;
-          });
-        }
-      } else {
-        Fluttertoast.showToast(
-            msg: "Not in zone!!",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            timeInSecForIosWeb: 1,
-            // textColor: Colors.white,
-            fontSize: 12.0
-        );
-        LogFileManager.writeLog("punch in flag P not in zone");
-        print("Not in zone");
-      }
-    }
-  }
-
-}
-
-Future<void> punchOut() async {
-  bool hasPermission = await handleLocationPermission();
-  if (!hasPermission) {
-    _showSnackbar("Location permission required for Punch In!.Please allow from settings");
-    return;
-  }
-
-  if(DISTANCEFLAG =='Y'){
-    if(ADDRESSFLAG == 'Y') {
-      LocationHandler.changeToRemoteLocation();
-
-      LocationHandler.remoteZoneLat = double.parse(REMOTELAT);
-      LocationHandler.remoteZoneLon = double.parse(REMOTELONG);
-      // _currentAddress = REMOTELOCATION.toString();
-      // bool ifInZone = await LocationHandler.checkIfInZone();
-      // if (ifInZone) {
-      try {
-        _currentLat = LocationHandler.currentLat.toString();
-        _currentLon = LocationHandler.currentLon.toString();
-        _currentAddress = LocationHandler.currentAddress;
-        LogFileManager.writeLog("punch out N Y"+_currentLat! + _currentLon! + _currentAddress!);
-
-        String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-            DateTime.now()).substring(0, 10);
-        String currentTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-            DateTime.now()).substring(11, 19);
-        String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-            DateTime.now()).substring(0, 19);
-        await retorepunchoutdata();
-        if (await getOutEntryFromDataBase(currentDate, currentTime, staffCode!)) {
-          String? result = await storeOutEntry(
-              currentDate,
-              currentDateTime,
-              staffCode!,
-              "000",
-              _currentAddress!,
-              _currentLat!,
-              _currentLon!,
-              plantcode?.toString() ?? "01"
-          );
-
-          print("result $result");
-
-          // After successful operation, show a SnackBar
-          setState(() {
-            isButtonDisabledIn = true;
-            isButtonDisabledOut = false;
-            _updateButtonInitialState();
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: const Text('Punch-out Successful!'),
-                action: SnackBarAction(label: 'OK', onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                }),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch out remote location try: $result");
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: const Text('Already Marked!! or First Punch Out!!'),
-                action: SnackBarAction(label: 'X', onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                }),
-                backgroundColor: Colors.redAccent,
-                duration: const Duration(seconds: 3)
-            ),
-          );
-        }
-      } catch (e) {
-        print("Error: $e");
-
-        // If there is an error, show a SnackBar with the error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Punch-out failed! Please try again.'),
-              duration: const Duration(seconds: 3)
-          ),
-        );
-        LogFileManager.writeLog("punch out remote location catch: $e");
-      } finally{
-        setState(() {
-          isLoading = false;
-        });
-      }
-    }
-    else{
-      try {
-        await LocationHandler.checkIfInZone();
-        _currentLat = LocationHandler.currentLat.toString()??'';
-        _currentLon = LocationHandler.currentLon.toString();
-        _currentAddress = LocationHandler.currentAddress;
-        LogFileManager.writeLog("punch out N y else"+_currentLat! + _currentLon! + _currentAddress!);
-
-        String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 10);
-        String currentTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(11, 19);
-        String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(DateTime.now()).substring(0, 19);
-        await retorepunchoutdata();
-
-        if (await getOutEntryFromDataBase(currentDate, currentTime, staffCode!)) {
-          String? result = await storeOutEntry(currentDate, currentDateTime, staffCode!, "000", _currentAddress!, _currentLat!, _currentLon!,plantcode?.toString() ?? "01"
-          );
-
-          print("result $result");
-
-          // After successful operation, show a SnackBar
-          setState(() {
-            isButtonDisabledIn = true;
-            isButtonDisabledOut = false;
-            _updateButtonInitialState();
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: const Text('Punch-out Successful!'),
-                action: SnackBarAction(label: 'OK', onPressed: (){ScaffoldMessenger.of(context).hideCurrentSnackBar();}),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch out acual location try: $result");
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: const Text('Already Marked!! or First Punch Out!!'),
-                action: SnackBarAction(label: 'X', onPressed: (){ScaffoldMessenger.of(context).hideCurrentSnackBar();}),
-                backgroundColor: Colors.redAccent,
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch out actual location try else");
-        }
-
-      } catch (e) {
-        print("Error: $e");
-
-        // If there is an error, show a SnackBar with the error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Punch-out failed! Please try again.'),
-              duration: const Duration(seconds: 3)
-          ),
-        );
-        LogFileManager.writeLog("punch out actual location catch: $e");
-      } finally {
-        setState(() {
-          isLoading = false;
-        });
-      }
-    }
-  }
-  else{
-    print("errorrr001");
-
-    if(ADDRESSFLAG == 'Y'){
-
-      print("errorrr002");
-
-      LocationHandler.changeToRemoteLocation();
-
-      // String? remoLoc= REMOTELOCATION.toString();
-      // String? remoLat= REMOTELAT.toString();
-      // String? remoLong= REMOTELONG.toString();
-      // print("error"+ remoLoc + remoLong + remoLat);
-
-      // setState(() async {
-      //
-      // });
-*/
-/**/ /*
-
-      LocationHandler.remoteZoneLat = double.parse(REMOTELAT);
-      LocationHandler.remoteZoneLon = double.parse(REMOTELONG);
-      // _currentAddress = REMOTELOCATION.toString();
-      bool ifInZone = await LocationHandler.checkIfInZone();
-      if(ifInZone) {
-        // Simulate API calls
-        try {
-          _currentLat = LocationHandler.currentLat.toString();
-          _currentLon = LocationHandler.currentLon.toString();
-          _currentAddress = LocationHandler.currentAddress;
-          LogFileManager.writeLog("punch out else y"+_currentLat! + _currentLon! + _currentAddress!);
-
-          String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-              DateTime.now()).toString().substring(0, 10);
-          String currentTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-              DateTime.now()).toString().substring(11, 19);
-          String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-              DateTime.now()).toString().substring(0, 19);
-          await retorepunchoutdata();
-
-          if (await getOutEntryFromDataBase(
-              currentDate, currentTime, staffCode!)) {
-            String? result = await storeOutEntry(
-                currentDate,
-                currentDateTime,
-                staffCode!,
-                "000",
-                _currentAddress!,
-                _currentLat!,
-                _currentLon!,
-                plantcode?.toString() ?? "01"
-            );
-
-            setState(() {
-              isButtonDisabledOut = true;
-              isButtonDisabledIn = false;
-              _updateButtonInitialState();
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Punch-out Successful!'),
-                action: SnackBarAction(label: 'OK', onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                }),
-                backgroundColor: Colors.green,
-              ),
-            );
-            LogFileManager.writeLog("punch out remote location flagN else  try: $result");
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: const Text('Already Marked!! or First Punch In!!'),
-                  action: SnackBarAction(label: 'X', onPressed: () {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  }),
-                  backgroundColor: Colors.redAccent,
-                  duration: const Duration(seconds: 3)
-              ),
-            );
-            LogFileManager.writeLog("punch out remote location fllag N else else");
-          }
-        } catch (e) {
-          print("Error: $e");
-
-          // If there is an error, show a SnackBar with the error message
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Punch-out failed! Please try again.'),
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch out remote location flagN else  catch: $e");
-        } finally{
-          setState(() {
-            isLoading = false;
-          });
-        }
-      } else{
-        Fluttertoast.showToast(
-            msg: "Not in zone!!",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            timeInSecForIosWeb: 1,
-            // textColor: Colors.white,
-            fontSize: 12.0
-        );
-        print("Not in zone");
-        LogFileManager.writeLog("punch out remote location flagN not in zone");
-      }
-    }
-    else{
-      bool ifInZone = await LocationHandler.checkIfInZone();
-      if(ifInZone) {
-        try {
-          _currentLat = LocationHandler.currentLat.toString();
-          _currentLon = LocationHandler.currentLon.toString();
-          _currentAddress = LocationHandler.currentAddress;
-          LogFileManager.writeLog("punch out else y else"+_currentLat! + _currentLon! + _currentAddress!);
-
-          String currentDate = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-              DateTime.now()).substring(0, 10);
-          String currentTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-              DateTime.now()).substring(11, 19);
-          String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss').format(
-              DateTime.now()).substring(0, 19);
-          await retorepunchoutdata();
-
-          if (await getOutEntryFromDataBase(
-              currentDate, currentTime, staffCode!)) {
-            String? result = await storeOutEntry(
-                currentDate,
-                currentDateTime,
-                staffCode!,
-                "000",
-                _currentAddress!,
-                _currentLat!,
-                _currentLon!,
-                plantcode?.toString() ?? "01"
-            );
-
-            print("result $result");
-
-            // After successful operation, show a SnackBar
-            setState(() {
-              isButtonDisabledIn = true;
-              isButtonDisabledOut = false;
-              _updateButtonInitialState();
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: const Text('Punch-out Successful!'),
-                  action: SnackBarAction(label: 'OK', onPressed: () {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  }),
-                  backgroundColor: Colors.green,
-                  duration: const Duration(seconds: 3)
-              ),
-            );
-            LogFileManager.writeLog("punch out actual location flagN else  catch: $result");
-
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: const Text(
-                      'Already Marked!! or First Punch Out!!'),
-                  action: SnackBarAction(label: 'X', onPressed: () {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  }),
-                  backgroundColor: Colors.redAccent,
-                  duration: const Duration(seconds: 3)
-              ),
-            );
-            LogFileManager.writeLog("punch out remote location flagN else  else");
-
-          }
-        } catch (e) {
-          print("Error: $e");
-          print(_currentLat);
-          print(_currentLon);
-          print(_currentAddress);
-          // If there is an error, show a SnackBar with the error message
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Punch-out failed! Please try again.'),
-                duration: const Duration(seconds: 3)
-            ),
-          );
-          LogFileManager.writeLog("punch out actual location flagN else  catch: $e");
-
-        } finally{
-          setState(() {
-            isLoading = false;
-          });
-        }
-      }
-      else{
-        Fluttertoast.showToast(
-            msg: "Not in zone!!",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            timeInSecForIosWeb: 1,
-            // textColor: Colors.white,
-            fontSize: 12.0
-        );
-        print("Not in zone");
-        LogFileManager.writeLog("punch out actaual location flagN else not in zone");
-
-      }
-    }
-  }
-}*/
