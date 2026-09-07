@@ -178,6 +178,7 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
+//
   Future<void> _logoutAndGoToLogin() async {
     try {
       // Clear remembered login credentials

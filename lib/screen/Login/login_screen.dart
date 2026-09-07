@@ -244,7 +244,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   }
                 }*/
 
-                else {
+                /*       else {
                   // User login - check registered device UUID
                   String? responseDeviceId = state.loginResponse!.message!.uuid;
 
@@ -321,11 +321,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       timeInSecForIosWeb: 1,
                     );
                   }
-                }
-
-                /*else {
-                  await checkBiometrics();
                 }*/
+
+                else {
+                  await checkBiometrics();
+                }
               } else {
                 // uncomment if login gives the issue in second time login
                 storage.delete(key: 'username');

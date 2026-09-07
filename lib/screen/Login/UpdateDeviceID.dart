@@ -303,7 +303,7 @@ class UpdatedeviceidState extends State<Updatedeviceid> {
 
     DateTime lastUpdate = DateTime.fromMillisecondsSinceEpoch(lastUpdateMillis);
     final now = DateTime.now();
-    return now.difference(lastUpdate).inDays >= 7;
+    return now.difference(lastUpdate).inDays >= 2;
   }
 
   void onSubmitPressed() async {
@@ -313,7 +313,7 @@ class UpdatedeviceidState extends State<Updatedeviceid> {
         _showCaptcha = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Device ID can be changed only after 7 days.")),
+        SnackBar(content: Text("Device ID can be changed only after 2 days.")),
       );
       return;
     }
@@ -324,7 +324,7 @@ class UpdatedeviceidState extends State<Updatedeviceid> {
       builder: (_) => AlertDialog(
         title: Text("Confirm Change"),
         content: Text(
-            "Once Device ID is changed, it can only be changed after 7 days."),
+            "Once Device ID is changed, it can only be changed after 2 days."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
