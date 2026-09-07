@@ -40,12 +40,15 @@ class _AttendanceReportState extends State<AttendanceReport> {
 
   DateTime today = DateTime.now();
   Map<DateTime, String> attendanceStatus =
-      {}; // Maps date to "PUNCH_IN", "PUNCH_OUT", or "ABSENT"
+  {}; // Maps date to "PUNCH_IN", "PUNCH_OUT", or "ABSENT"
 
   DateTime? focusedDay;
   DateTime? selectedDay;
   Map<DateTime, List<InOutDetail>> attendanceData = {};
-  Set<DateTime> presentDays = {};
+
+  Set<DateTime> completedDays = {}; // IN + OUT
+  Set<DateTime> punchInOnlyDays = {}; // IN but no OUT
+  // Set<DateTime> presentDays = {};
   Set<DateTime> absentDays = {};
 
   // int countOfPresentDayinMonth = countOfPresent();
@@ -89,24 +92,25 @@ class _AttendanceReportState extends State<AttendanceReport> {
       setState(() => isLoading = true);
 
       DateTime now = DateTime.now();
-      DateTime sixMonthsAgo = DateTime(now.year, now.month - 5, 1);
+      // DateTime sixMonthsAgo = DateTime(now.year, now.month - 5, 1);
+      DateTime oneYearAgo = DateTime(now.year, now.month - 11, 1,);
 
-      String formattedFromDate = DateFormat('dd/MM/yyyy').format(sixMonthsAgo);
+      String formattedFromDate = DateFormat('dd/MM/yyyy').format(oneYearAgo);
       String formattedToDate = DateFormat('dd/MM/yyyy').format(now);
 
       final response = await http
           .post(
-            Uri.parse('http://114.143.140.28:8091/api/InOut/InOutDetails'),
-            headers: {
-              "Content-Type": "application/json",
-              'Authorization': 'Bearer $token'
-            },
-            body: jsonEncode({
-              "staffCode": staffCode,
-              "fromDate": formattedFromDate,
-              "toDate": formattedToDate,
-            }),
-          )
+        Uri.parse('http://114.143.140.28:8091/api/InOut/InOutDetails'),
+        headers: {
+          "Content-Type": "application/json",
+          'Authorization': 'Bearer $token'
+        },
+        body: jsonEncode({
+          "staffCode": staffCode,
+          "fromDate": formattedFromDate,
+          "toDate": formattedToDate,
+        }),
+      )
           .timeout(const Duration(seconds: 15));
 
       print("inout details statuscode: ${response.statusCode}");
@@ -117,34 +121,76 @@ class _AttendanceReportState extends State<AttendanceReport> {
         List<dynamic> data = decoded['data'] ?? [];
 
         List<InOutDetail> details =
-            data.map((item) => InOutDetail.fromJson(item)).toList();
+        data.map((item) => InOutDetail.fromJson(item)).toList();
 
         attendanceData.clear();
-        presentDays.clear();
+        completedDays.clear();
+        punchInOnlyDays.clear();
         absentDays.clear();
 
         for (var detail in details) {
-          DateTime date = DateFormat('dd/MM/yyyy HH:mm:ss')
+          final date = DateFormat('dd/MM/yyyy HH:mm:ss')
               .parse(detail.transactionTime!)
               .toLocal();
-          DateTime normalizedDate =
-              DateTime(date.year, date.month, date.day); // Remove time
 
-          presentDays.add(normalizedDate);
+          final normalizedDate = DateTime(
+            date.year,
+            date.month,
+            date.day,
+          );
 
-          if (!attendanceData.containsKey(normalizedDate)) {
-            attendanceData[normalizedDate] = [];
-          }
+          attendanceData.putIfAbsent(normalizedDate, () => []);
           attendanceData[normalizedDate]!.add(detail);
+        }
+        for (final entry in attendanceData.entries) {
+          final date = entry.key;
+          final records = entry.value;
+
+          final hasPunchIn = records.any(
+                (detail) => detail.inOut?.toUpperCase() == 'IN',
+          );
+
+          final hasPunchOut = records.any(
+                (detail) => detail.inOut?.toUpperCase() == 'OUT',
+          );
+
+          if (hasPunchIn && hasPunchOut) {
+            completedDays.add(date);
+          } else if (hasPunchIn) {
+            punchInOnlyDays.add(date);
+          }
         }
 
         // Identify absent days for the last 6 months
-        for (int i = 0; i < 180; i++) {
-          // 6 months = ~180 days
-          DateTime day = sixMonthsAgo.add(Duration(days: i));
-          if (!presentDays.contains(day) && day.isBefore(now)) {
-            absentDays.add(day);
+        // for (int i = 0; i < 180; i++) {
+        //   // 6 months = ~180 days
+        //   DateTime day = sixMonthsAgo.add(Duration(days: i));
+        //   if (!presentDays.contains(day) && day.isBefore(now)) {
+        //     absentDays.add(day);
+        //   }
+        // }
+        DateTime currentDay = DateTime(
+          oneYearAgo.year,
+          oneYearAgo.month,
+          oneYearAgo.day,
+        );
+
+        final todayDate = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        );
+
+        while (!currentDay.isAfter(todayDate)) {
+          final hasAttendance = attendanceData.keys.any(
+                (date) => isSameDay(date, currentDay),
+          );
+
+          if (!hasAttendance) {
+            absentDays.add(currentDay);
           }
+
+          currentDay = currentDay.add(const Duration(days: 1));
         }
       }
 
@@ -222,17 +268,17 @@ class _AttendanceReportState extends State<AttendanceReport> {
 
       final response = await http
           .post(
-            Uri.parse('http://114.143.140.28:8091/api/InOut/InOutDetails'),
-            headers: {
-              "Content-Type": "application/json",
-              'Authorization': 'Bearer $token'
-            },
-            body: jsonEncode({
-              "staffCode": staffCode,
-              "fromDate": formattedFromDate,
-              "toDate": formattedToDate,
-            }),
-          )
+        Uri.parse('http://114.143.140.28:8091/api/InOut/InOutDetails'),
+        headers: {
+          "Content-Type": "application/json",
+          'Authorization': 'Bearer $token'
+        },
+        body: jsonEncode({
+          "staffCode": staffCode,
+          "fromDate": formattedFromDate,
+          "toDate": formattedToDate,
+        }),
+      )
           .timeout(const Duration(seconds: 15));
 
       print("inout details statuscode: ${response.statusCode}");
@@ -243,7 +289,7 @@ class _AttendanceReportState extends State<AttendanceReport> {
         List<dynamic> data = decoded['data'] ?? [];
 
         List<InOutDetail> details =
-            data.map((item) => InOutDetail.fromJson(item)).toList();
+        data.map((item) => InOutDetail.fromJson(item)).toList();
 
         // Group data by date
         groupedInOutDetails = _groupByDate(details);
@@ -295,7 +341,7 @@ class _AttendanceReportState extends State<AttendanceReport> {
     Map<String, List<InOutDetail>> groupedData = {};
     for (var detail in details) {
       String date =
-          detail.transactionTime!.substring(0, 10); // Extract the date part
+      detail.transactionTime!.substring(0, 10); // Extract the date part
       if (!groupedData.containsKey(date)) {
         groupedData[date] = [];
       }
@@ -324,7 +370,8 @@ class _AttendanceReportState extends State<AttendanceReport> {
           "In/Out Details",
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        backgroundColor: MyColors.darkBlue,
+        backgroundColor: MyColors.blueColorCode,
+        centerTitle: true,
         actions: [
           if (!isMonthlyReport)
             IconButton(
@@ -348,141 +395,169 @@ class _AttendanceReportState extends State<AttendanceReport> {
     return isLoading
         ? Center(child: CircularProgressIndicator())
         : SingleChildScrollView(
-            child: Column(
+      child: Column(
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(6.0),
+            child: Row(
               children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(6.0),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        onPressed: () =>
-                            setState(() => isMonthlyReport = false),
-                        icon: const Icon(Icons.arrow_back_rounded,
-                            color: MyColors.darkBlue),
+                IconButton(
+                  onPressed: () =>
+                      setState(() => isMonthlyReport = false),
+                  icon: const Icon(Icons.arrow_back_rounded,
+                      color: MyColors.darkBlue),
+                ),
+                const Expanded(
+                  child: Center(
+                    child: Text(
+                      'Monthly Attendance Report',
+                      style: TextStyle(
+                        color: MyColors.darkBlue,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const Expanded(
-                        child: Center(
-                          child: Text(
-                            'Monthly Attendance Report',
-                            style: TextStyle(
-                              color: MyColors.darkBlue,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                    ],
+                    ),
                   ),
                 ),
+                const SizedBox(width: 20),
+              ],
+            ),
+          ),
 
-                // Calendar Widget
-                TableCalendar(
-                  firstDay: DateTime.utc(2024, 1, 1),
-                  lastDay: DateTime.now(),
-                  focusedDay: focusedDay ?? DateTime.now(),
-                  selectedDayPredicate: (day) => isSameDay(selectedDay!, day),
-                  calendarFormat: CalendarFormat.month,
-                  eventLoader: (day) => attendanceData[day] ?? [],
-                  calendarStyle: CalendarStyle(
-                      // ... (keep your existing calendar styles) ...
-                      ),
-                  headerStyle: const HeaderStyle(
-                    formatButtonVisible: false,
-                    titleCentered: true,
-                  ),
-                  calendarBuilders: CalendarBuilders(
-                    defaultBuilder: (context, day, _) {
-                      final normalizedDay =
-                          DateTime(day.year, day.month, day.day);
-                      if (presentDays.any((d) => isSameDay(d, normalizedDay))) {
-                        return _buildCalendarCell(day, Colors.green);
-                      } else if (absentDays
-                          .any((d) => isSameDay(d, normalizedDay))) {
-                        return _buildCalendarCell(day, Colors.red);
-                      }
-                      return null;
-                    },
-                  ),
-                  onPageChanged: (focusedDay) async {
-                    final now = DateTime.now();
-                    DateTime targetDay = focusedDay.month == now.month &&
-                            focusedDay.year == now.year
-                        ? now
-                        : DateTime(focusedDay.year, focusedDay.month, 1);
+          // Calendar Widget
+          TableCalendar(
+            firstDay: DateTime.utc(2024, 1, 1),
+            lastDay: DateTime.now(),
+            focusedDay: focusedDay ?? DateTime.now(),
+            selectedDayPredicate: (day) => isSameDay(selectedDay!, day),
+            calendarFormat: CalendarFormat.month,
+            eventLoader: (day) => attendanceData[day] ?? [],
+            calendarStyle: CalendarStyle(
+              // ... (keep your existing calendar styles) ...
+            ),
+            headerStyle: const HeaderStyle(
+              formatButtonVisible: false,
+              titleCentered: true,
+            ),
+            calendarBuilders: CalendarBuilders(
+              defaultBuilder: (context, day, _) {
+                final normalizedDay = DateTime(
+                  day.year,
+                  day.month,
+                  day.day,
+                );
 
-                    setState(() {
-                      this.focusedDay = targetDay;
-                      selectedDay = targetDay;
-                    });
+                // IN + OUT = Completed
+                if (completedDays.any(
+                      (d) => isSameDay(d, normalizedDay),
+                )) {
+                  return _buildCalendarCell(
+                    day,
+                    Colors.green,
+                  );
+                }
 
-                    // NEW: Safe way to find matching data
-                    List<InOutDetail>? detailsForDay;
-                    for (final entry in attendanceData.entries) {
-                      if (isSameDay(entry.key, targetDay)) {
-                        detailsForDay = entry.value;
-                        break;
-                      }
-                    }
+                // Only IN = Currently inside / incomplete
+                if (punchInOnlyDays.any(
+                      (d) => isSameDay(d, normalizedDay),
+                )) {
+                  return _buildCalendarCell(
+                    day,
+                    Colors.orange,
+                  );
+                }
 
-                    setState(() {
-                      selectedDayDetails = detailsForDay ?? [];
-                    });
-                  },
-                  onDaySelected: (selectedDay, focusedDay) {
-                    final normalizedDay = DateTime(
-                        selectedDay.year, selectedDay.month, selectedDay.day);
+                // No attendance = Absent
+                if (absentDays.any(
+                      (d) => isSameDay(d, normalizedDay),
+                )) {
+                  return _buildCalendarCell(
+                    day,
+                    Colors.red,
+                  );
+                }
 
-                    // Alternative lookup method that handles nulls properly
-                    List<InOutDetail>? detailsForDay;
-                    for (final entry in attendanceData.entries) {
-                      if (isSameDay(entry.key, normalizedDay)) {
-                        detailsForDay = entry.value;
-                        break;
-                      }
-                    }
+                return null;
+              },
+            ),
+            onPageChanged: (focusedDay) async {
+              final now = DateTime.now();
+              DateTime targetDay = focusedDay.month == now.month &&
+                  focusedDay.year == now.year
+                  ? now
+                  : DateTime(focusedDay.year, focusedDay.month, 1);
 
-                    setState(() {
-                      this.selectedDay = normalizedDay;
-                      this.focusedDay = focusedDay;
-                      selectedDayDetails = detailsForDay ?? [];
-                    });
+              setState(() {
+                this.focusedDay = targetDay;
+                selectedDay = targetDay;
+              });
 
-                    if (detailsForDay == null) {
-                      Fluttertoast.showToast(
-                        msg:
-                            "No records for ${DateFormat('dd MMM yyyy').format(normalizedDay)}",
-                        toastLength: Toast.LENGTH_SHORT,
-                      );
-                    }
-                  },
-                ),
+              // NEW: Safe way to find matching data
+              List<InOutDetail>? detailsForDay;
+              for (final entry in attendanceData.entries) {
+                if (isSameDay(entry.key, targetDay)) {
+                  detailsForDay = entry.value;
+                  break;
+                }
+              }
 
-                const SizedBox(height: 20),
-                _buildLegend(),
+              setState(() {
+                selectedDayDetails = detailsForDay ?? [];
+              });
+            },
+            onDaySelected: (selectedDay, focusedDay) {
+              final normalizedDay = DateTime(
+                  selectedDay.year, selectedDay.month, selectedDay.day);
 
-                // Attendance Details Section
-                if (selectedDay != null)
-                  Column(
-                    children: [
-                      const SizedBox(height: 10),
-                      if (selectedDayDetails.isNotEmpty)
-                        _buildSelectedAttendanceList(),
-                      if (selectedDayDetails.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Text(
-                            "No attendance records for ${DateFormat('dd MMM yyyy').format(selectedDay!)}",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                    ],
+              // Alternative lookup method that handles nulls properly
+              List<InOutDetail>? detailsForDay;
+              for (final entry in attendanceData.entries) {
+                if (isSameDay(entry.key, normalizedDay)) {
+                  detailsForDay = entry.value;
+                  break;
+                }
+              }
+
+              setState(() {
+                this.selectedDay = normalizedDay;
+                this.focusedDay = focusedDay;
+                selectedDayDetails = detailsForDay ?? [];
+              });
+
+              if (detailsForDay == null) {
+                Fluttertoast.showToast(
+                  msg:
+                  "No records for ${DateFormat('dd MMM yyyy').format(normalizedDay)}",
+                  toastLength: Toast.LENGTH_SHORT,
+                );
+              }
+            },
+          ),
+
+          const SizedBox(height: 20),
+          _buildLegend(),
+
+          // Attendance Details Section
+          if (selectedDay != null)
+            Column(
+              children: [
+                const SizedBox(height: 10),
+                if (selectedDayDetails.isNotEmpty)
+                  _buildSelectedAttendanceList(),
+                if (selectedDayDetails.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Text(
+                      "No attendance records for ${DateFormat('dd MMM yyyy').format(selectedDay!)}",
+                      style: TextStyle(color: Colors.grey),
+                    ),
                   ),
               ],
             ),
-          );
+        ],
+      ),
+    );
   }
 
 // Helper method for date comparison
@@ -490,23 +565,23 @@ class _AttendanceReportState extends State<AttendanceReport> {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  int _getPresentDaysCount(DateTime month) {
-    return presentDays
-        .where((date) => date.year == month.year && date.month == month.month)
-        .length;
-  }
+  // int _getPresentDaysCount(DateTime month) {
+  //   return presentDays
+  //       .where((date) => date.year == month.year && date.month == month.month)
+  //       .length;
+  // }
 
   Widget _buildSelectedAttendanceList() {
     DateTime day = selectedDay!;
     DateTime? firstPunch = selectedDayDetails.isNotEmpty
         ? DateFormat('dd/MM/yyyy HH:mm:ss')
-            .parse(selectedDayDetails.first.transactionTime!)
-            .toLocal()
+        .parse(selectedDayDetails.first.transactionTime!)
+        .toLocal()
         : null;
     DateTime? lastPunch = selectedDayDetails.isNotEmpty
         ? DateFormat('dd/MM/yyyy HH:mm:ss')
-            .parse(selectedDayDetails.last.transactionTime!)
-            .toLocal()
+        .parse(selectedDayDetails.last.transactionTime!)
+        .toLocal()
         : null;
 
     Duration totalDuration = Duration();
@@ -579,60 +654,49 @@ class _AttendanceReportState extends State<AttendanceReport> {
     );
   }
 
-  Widget _buildAttendanceDetails(DateTime day) {
-    List<InOutDetail> details = attendanceData[day] ?? [];
+  Widget _buildLegend() {
+    final presentCount = completedDays
+        .where(
+          (date) =>
+      date.year == (focusedDay ?? DateTime.now()).year &&
+          date.month == (focusedDay ?? DateTime.now()).month,
+    )
+        .length;
 
-    if (details.isEmpty) return SizedBox();
+    final incompleteCount = punchInOnlyDays
+        .where(
+          (date) =>
+      date.year == (focusedDay ?? DateTime.now()).year &&
+          date.month == (focusedDay ?? DateTime.now()).month,
+    )
+        .length;
 
-    DateTime? firstPunch = details.isNotEmpty
-        ? DateFormat('dd/MM/yyyy HH:mm:ss')
-            .parse(details.first.transactionTime!)
-            .toLocal()
-        : null;
-
-    DateTime? lastPunch = details.isNotEmpty
-        ? DateFormat('dd/MM/yyyy HH:mm:ss')
-            .parse(details.last.transactionTime!)
-            .toLocal()
-        : null;
-
-    Duration totalDuration = Duration();
-    if (firstPunch != null && lastPunch != null) {
-      totalDuration = lastPunch.difference(firstPunch);
-    }
-
-    return Flexible(
+    return Center(
       child: Container(
-        padding: EdgeInsets.all(15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: Colors.grey.shade400,
+          ),
+        ),
+        child: Wrap(
+          spacing: 14,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
           children: [
-            Text(
-              "Attendance Details - ${DateFormat('dd MMM yyyy').format(day)}",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            _legendItem(
+              Colors.green,
+              "Present ($presentCount)",
             ),
-            SizedBox(height: 10),
-            Expanded(
-              child: ListView.builder(
-                shrinkWrap: true,
-                physics: BouncingScrollPhysics(),
-                itemCount: details.length,
-                itemBuilder: (context, index) {
-                  final detail = details[index];
-                  return ListTile(
-                    title: Text("${detail.inOut} at ${detail.transactionTime}"),
-                    subtitle: Text("Address: ${detail.address}"),
-                  );
-                },
-              ),
+            _legendItem(
+              Colors.orange,
+              "Attendance Started ($incompleteCount)",
             ),
-            Divider(),
-            Text(
-              "Total Hours: ${totalDuration.inHours}h ${totalDuration.inMinutes.remainder(60)}m",
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue),
+            _legendItem(
+              Colors.red,
+              "Absent",
             ),
           ],
         ),
@@ -640,51 +704,22 @@ class _AttendanceReportState extends State<AttendanceReport> {
     );
   }
 
-  Widget _buildLegend() {
-    int presentCount =
-        _getPresentDaysCount(focusedDay ?? DateTime.now()); // Use focusedDay
-
-    return Center(
-      child: Container(
-        padding: EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.grey.shade400),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.3),
-              blurRadius: 5,
-              spreadRadius: 2,
-              offset: Offset(2, 3),
-            ),
-          ],
+  Widget _legendItem(Color color, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          backgroundColor: color,
+          radius: 8,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(backgroundColor: Colors.green, radius: 8),
-                SizedBox(width: 8),
-                Text(
-                  "Present ($presentCount)",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            SizedBox(width: 8), // Space between rows
-            Row(
-              children: [
-                CircleAvatar(backgroundColor: Colors.red, radius: 8),
-                SizedBox(width: 8),
-                Text("Absent"),
-              ],
-            ),
-          ],
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -755,9 +790,18 @@ class _AttendanceReportState extends State<AttendanceReport> {
                     'From: ',
                     style: TextStyle(fontSize: 16),
                   ),
+                  // Text(
+                  //   '${DateFormat('dd/MM/yyyy').format(fromDate!)}',
+                  //   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  // ),
                   Text(
-                    '${DateFormat('dd/MM/yyyy').format(fromDate!)}',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    DateFormat('dd/MM/yyyy').format(
+                      DateTime.now().subtract(const Duration(days: 1)),
+                    ),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Text(
                     '  To: ',
@@ -773,314 +817,235 @@ class _AttendanceReportState extends State<AttendanceReport> {
           child: isLoading
               ? Center(child: CircularProgressIndicator())
               : groupedInOutDetails.isEmpty
-                  ? Center(child: Text("No Data Available"))
-                  : isGridView
-                      ? GridView.builder(
-                          padding: const EdgeInsets.all(8),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                          ),
-                          itemCount: groupedInOutDetails.keys.length,
-                          itemBuilder: (context, index) {
-                            String date =
-                                groupedInOutDetails.keys.elementAt(index);
-                            List<InOutDetail> details =
-                                groupedInOutDetails[date]!;
+              ? Center(child: Text("No Data Available"))
+              : isGridView
+              ? GridView.builder(
+            padding: const EdgeInsets.all(8),
+            gridDelegate:
+            SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: groupedInOutDetails.keys.length,
+            itemBuilder: (context, index) {
+              String date =
+              groupedInOutDetails.keys.elementAt(index);
+              List<InOutDetail> details =
+              groupedInOutDetails[date]!;
 
-                            return Card(
-                              elevation: 2,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              color: Colors.white,
-                              child: SingleChildScrollView(
-                                // Add scrolling capability
-                                padding: const EdgeInsets.all(12.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "Date: $date",
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: MyColors.fontBlue,
-                                      ),
-                                    ),
-                                    ...details.map((detail) {
-                                      return Container(
-                                        margin: EdgeInsets.only(top: 10),
-                                        padding: EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: detail.inOut == "IN"
-                                              ? Colors.green.shade100
-                                              : Colors.red.shade100,
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              "Staff Code: ${detail.staffCode}",
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16,
-                                              ),
-                                            ),
-                                            SizedBox(height: 6),
-                                            Text(
-                                                "Transaction Time: ${detail.transactionTime}"),
-                                            Row(
-                                              children: [
-                                                const Text("In/Out: "),
-                                                Text(
-                                                  "${detail.inOut}",
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold),
-                                                ),
-                                              ],
-                                            ),
-                                            Text(
-                                              "Address: ${detail.address}",
-                                              overflow: TextOverflow.ellipsis,
-                                              // Truncate if too long
-                                              maxLines: 1, // Limit to 1 line
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ],
+              return Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                color: Colors.white,
+                child: SingleChildScrollView(
+                  // Add scrolling capability
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Date: $date",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: MyColors.fontBlue,
+                        ),
+                      ),
+                      ...details.map((detail) {
+                        return Container(
+                          margin: EdgeInsets.only(top: 10),
+                          padding: EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: detail.inOut == "IN"
+                                ? Colors.green.shade100
+                                : Colors.red.shade100,
+                            borderRadius:
+                            BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Staff Code: ${detail.staffCode}",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
                                 ),
                               ),
-                            );
-                          },
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(8),
-                          itemCount: groupedInOutDetails.keys.length,
-                          itemBuilder: (context, index) {
-                            String date =
-                                groupedInOutDetails.keys.elementAt(index);
-                            List<InOutDetail> details =
-                                groupedInOutDetails[date]!;
+                              SizedBox(height: 6),
+                              Text(
+                                  "Transaction Time: ${detail.transactionTime}"),
+                              Row(
+                                children: [
+                                  const Text("In/Out: "),
+                                  Text(
+                                    "${detail.inOut}",
+                                    style: TextStyle(
+                                        fontWeight:
+                                        FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                "Address: ${detail.address}",
+                                overflow: TextOverflow.ellipsis,
+                                // Truncate if too long
+                                maxLines: 1, // Limit to 1 line
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+              );
+            },
+          )
+              : ListView.builder(
+            padding: const EdgeInsets.all(8),
+            itemCount: groupedInOutDetails.keys.length,
+            itemBuilder: (context, index) {
+              String date =
+              groupedInOutDetails.keys.elementAt(index);
+              List<InOutDetail> details =
+              groupedInOutDetails[date]!;
 
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 10.0),
+                    child: Text(
+                      "Date: $date",
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: MyColors.fontBlue,
+                      ),
+                    ),
+                  ),
+                  ...details.map((detail) {
+                    return Card(
+                      elevation: 3,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      color: detail.inOut == "IN"
+                          ? Colors.green
+                          .shade100 // Highlight for Punch In
+                          : Colors.red
+                          .shade100, // Highlight for Punch Out
+                      child: Padding(
+                        padding: const EdgeInsets.all(14.0),
+                        child: Column(
+                          crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 10.0),
-                                  child: Text(
-                                    "Date: $date",
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: MyColors.fontBlue,
-                                    ),
+                                Icon(
+                                  detail.inOut == "IN"
+                                      ? Icons.login
+                                      : Icons.logout,
+                                  color: detail.inOut == "IN"
+                                      ? Colors.green
+                                      : Colors.red,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  detail.inOut == "IN"
+                                      ? "Punch In"
+                                      : "Punch Out",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    color: detail.inOut == "IN"
+                                        ? Colors.green[700]
+                                        : Colors.red[700],
                                   ),
                                 ),
-                                ...details.map((detail) {
-                                  return Card(
-                                    elevation: 3,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    color: detail.inOut == "IN"
-                                        ? Colors.green
-                                            .shade100 // Highlight for Punch In
-                                        : Colors.red
-                                            .shade100, // Highlight for Punch Out
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(14.0),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                detail.inOut == "IN"
-                                                    ? Icons.login
-                                                    : Icons.logout,
-                                                color: detail.inOut == "IN"
-                                                    ? Colors.green
-                                                    : Colors.red,
-                                                size: 20,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                detail.inOut == "IN"
-                                                    ? "Punch In"
-                                                    : "Punch Out",
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 18,
-                                                  color: detail.inOut == "IN"
-                                                      ? Colors.green[700]
-                                                      : Colors.red[700],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 10),
-                                          Divider(
-                                              height: 1,
-                                              color: Colors.grey.shade400),
-                                          const SizedBox(height: 10),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                "Staff Code: ",
-                                                style: TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.w600),
-                                              ),
-                                              Expanded(
-                                                child: Text(
-                                                  "${detail.staffCode}",
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Colors.black87),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          SizedBox(height: 6),
-                                          Row(
-                                            children: [
-                                              Icon(Icons.access_time,
-                                                  size: 18,
-                                                  color: Colors.grey.shade600),
-                                              SizedBox(width: 5),
-                                              Text(
-                                                "Transaction Time: ${detail.transactionTime}",
-                                                style: TextStyle(
-                                                    color: Colors.black87),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Icon(Icons.location_on,
-                                                  size: 18,
-                                                  color: Colors.grey.shade600),
-                                              const SizedBox(width: 5),
-                                              Expanded(
-                                                child: Text(
-                                                  "Address: ${detail.address}",
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                      color: Colors.black87),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                }),
                               ],
-                            );
-                          },
+                            ),
+                            const SizedBox(height: 10),
+                            Divider(
+                                height: 1,
+                                color: Colors.grey.shade400),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                const Text(
+                                  "Staff Code: ",
+                                  style: TextStyle(
+                                      fontWeight:
+                                      FontWeight.w600),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    "${detail.staffCode}",
+                                    style: TextStyle(
+                                        fontWeight:
+                                        FontWeight.bold,
+                                        color: Colors.black87),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Icon(Icons.access_time,
+                                    size: 18,
+                                    color: Colors.grey.shade600),
+                                SizedBox(width: 5),
+                                Text(
+                                  "Transaction Time: ${detail.transactionTime}",
+                                  style: TextStyle(
+                                      color: Colors.black87),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.location_on,
+                                    size: 18,
+                                    color: Colors.grey.shade600),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Text(
+                                    "Address: ${detail.address}",
+                                    maxLines: 2,
+                                    overflow:
+                                    TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        color: Colors.black87),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLegendItem(Color color, String label) {
-    return Row(
-      children: [
-        Container(
-          width: 15,
-          height: 15,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 5),
-        Text(label),
-      ],
-    );
-  }
-
-  _showAttendanceDetails(DateTime day) {
-    List<InOutDetail> details = attendanceData[day] ?? [];
-
-    if (details.isEmpty) return;
-
-    DateTime? firstPunch = details.isNotEmpty
-        ? DateFormat('dd/MM/yyyy HH:mm:ss')
-            .parse(details.first.transactionTime!)
-            .toLocal()
-        : null;
-
-    DateTime? lastPunch = details.isNotEmpty
-        ? DateFormat('dd/MM/yyyy HH:mm:ss')
-            .parse(details.last.transactionTime!)
-            .toLocal()
-        : null;
-
-    Duration totalDuration = Duration();
-    if (firstPunch != null && lastPunch != null) {
-      totalDuration = lastPunch.difference(firstPunch);
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Padding(
-          padding: EdgeInsets.all(15),
-          child: Text(
-              "Attendance Details - ${DateFormat('dd MMM yyyy').format(day)}"),
-        ),
-        content: Padding(
-            padding: EdgeInsets.all(10),
-            child: Expanded(
-              flex: 2,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ...details.map((detail) => ListTile(
-                        title: Text(
-                            "${detail.inOut} at ${detail.transactionTime}"),
-                        subtitle: Text("Address: ${detail.address}"),
-                      )),
-                  Divider(),
-                  Text(
-                    "Total Hours: ${totalDuration.inHours}h ${totalDuration.inMinutes.remainder(60)}m",
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue),
-                  ),
+                      ),
+                    );
+                  }),
                 ],
-              ),
-            )),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("Close"),
+              );
+            },
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
+
 }
 
 /*Future<void> fetchAttendanceDataMonthlyReport() async {
@@ -1658,7 +1623,7 @@ maxLines: 1, // Limit to 1 line
       ),
       title: const Text("In/Out Details",
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-      backgroundColor: MyColors.darkBlue,
+      backgroundColor: MyColors.lightBlue,
       actions: [
         IconButton(
           icon: Icon(
