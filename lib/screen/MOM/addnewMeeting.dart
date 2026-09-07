@@ -6,7 +6,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../../cleanarchitecture/feature/MOM/domain/enteties/customer.dart';
+import '../../cleanarchitecture/feature/MOM/domain/enteties/meeting.dart';
 import '../../cleanarchitecture/feature/MOM/domain/enteties/meetinghistory_group.dart';
+import '../../cleanarchitecture/feature/MOM/domain/enteties/meetingpoints.dart';
+import '../../cleanarchitecture/feature/MOM/domain/enteties/submitmeeting_request.dart';
 import '../../cleanarchitecture/feature/MOM/presentation/provider/decision/decisionprovider.dart';
 import '../../cleanarchitecture/feature/MOM/presentation/provider/submeeting/submitmeetingprovider.dart';
 import '../../cleanarchitecture/feature/MOM/presentation/provider/submeeting/submitmeetingstate.dart';
@@ -403,7 +406,13 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded,
                   color: textPrimary, size: 20),
-              onPressed: () => Navigator.pop(context),
+              onPressed: () async {
+                final shouldGoBack = await _confirmBack();
+
+                if (shouldGoBack && mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
             ),
             title: Text(
               widget.isEditing ? "Update Meeting Details" : "Add New Meeting",
@@ -798,212 +807,210 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
     );
   }
 
-  // Widget _buildBottomActionBar(
-  //   MeetingSubmitState submitState,
-  // ) {
-  //   return Container(
-  //     padding: const EdgeInsets.all(16),
-  //     decoration: const BoxDecoration(
-  //       color: Colors.white,
-  //       border: Border(top: BorderSide(color: cardBorderColor, width: 1)),
-  //     ),
-  //     child: Row(
-  //       children: [
-  //         Expanded(
-  //           child: OutlinedButton(
-  //             onPressed: () => Navigator.pop(context),
-  //             style: OutlinedButton.styleFrom(
-  //               foregroundColor: textSecondary,
-  //               side: const BorderSide(color: cardBorderColor),
-  //               shape: RoundedRectangleBorder(
-  //                 borderRadius: BorderRadius.circular(12),
-  //               ),
-  //               padding: const EdgeInsets.symmetric(vertical: 14),
-  //             ),
-  //             child: Text(
-  //               widget.isEditing ? "Cancel" : "Cancel",
-  //               style: GoogleFonts.inter(
-  //                 fontWeight: FontWeight.w600,
-  //                 fontSize: 14,
-  //               ),
-  //             ),
-  //           ),
-  //         ),
-  //         const SizedBox(width: 12),
-  //         Expanded(
-  //           flex: 2,
-  //           child: ElevatedButton.icon(
-  //             onPressed: submitState.isLoading
-  //                 ? null
-  //                 : () async {
-  //                     if (!validateForm()) {
-  //                       return;
-  //                     }
-  //
-  //                     final staffCode = await storage.read(
-  //                       key: "Staff_Code",
-  //                     );
-  //
-  //                     /// Present Members
-  //                     final allPresent = <String>[
-  //                       if (_staffName != null) _staffName!,
-  //                       ...dynamicPresentMembers,
-  //                     ].toSet().toList();
-  //
-  //                     /// Meeting Entity
-  //                     final meeting = Meeting(
-  //                       meetingId: widget.isEditing
-  //                           ? widget.meetingHistory!.meetingId
-  //                           : "",
-  //                       customerCode: widget.customer.customerCode,
-  //                       memberPresent: allPresent.join(","),
-  //                       memberAbsent: dynamicAbsentMembers.join(","),
-  //                       meetingDateTime:
-  //                           "${dateController.text} ${timeController.text}",
-  //                       nextMeetingDate: dateController.text,
-  //                       entryBy: staffCode!,
-  //                       flag: widget.isEditing ? "U" : "I",
-  //                     );
-  //
-  //                     /// Discussion Points
-  //                     final List<DiscussionPoint> points = [];
-  //
-  //                     // for (final key in rowKeys) {
-  //                     //   print("Rows = ${rowKeys.length}");
-  //                     //   print("Points = ${points.length}");
-  //                     //   final row = key.currentState;
-  //                     //
-  //                     //   if (row != null) {
-  //                     //     points.add(
-  //                     //       row.getDiscussionPoint(
-  //                     //         entryBy: staffCode,
-  //                     //       ),
-  //                     //     );
-  //                     //   }
-  //                     // }
-  //                     for (int i = 0; i < rowKeys.length; i++) {
-  //                       print("Rows = ${rowKeys.length}");
-  //                       print("Points = ${points.length}");
-  //
-  //                       final row = rowKeys[i].currentState;
-  //
-  //                       if (row != null) {
-  //                         final isLast = i == rowKeys.length - 1;
-  //
-  //                         points.add(
-  //                           row.getDiscussionPoint(
-  //                             entryBy: staffCode,
-  //                             last: isLast ? "Y" : "N",
-  //                           ),
-  //                         );
-  //                       }
-  //                     }
-  //
-  //                     final request = SubmitMeetingRequest(
-  //                       meeting: meeting,
-  //                       discussionPoints: points,
-  //                     );
-  //
-  //                     await ref
-  //                         .read(meetingSubmitNotifierProvider.notifier)
-  //                         .submitMeeting(request);
-  //
-  //                     if (!mounted) return;
-  //
-  //                     final state = ref.read(meetingSubmitNotifierProvider);
-  //
-  //                     if (state.error != null) {
-  //                       ScaffoldMessenger.of(context).showSnackBar(
-  //                         SnackBar(
-  //                           content: Text(state.error!),
-  //                           backgroundColor: Colors.red,
-  //                         ),
-  //                       );
-  //                       return;
-  //                     }
-  //
-  //                     final result = state.result;
-  //
-  //                     if (result == null) return;
-  //
-  //                     if (result.meetingSaved && result.pointsSaved) {
-  //                       ScaffoldMessenger.of(context).showSnackBar(
-  //                         SnackBar(
-  //                           content: Text(result.meetingMessage),
-  //                           backgroundColor: Colors.green,
-  //                         ),
-  //                       );
-  //
-  //                       Navigator.pop(context, true);
-  //                     } else {
-  //                       showDialog(
-  //                         context: context,
-  //                         builder: (_) => AlertDialog(
-  //                           title: const Text("Submission Result"),
-  //                           content: SingleChildScrollView(
-  //                             child: Column(
-  //                               crossAxisAlignment: CrossAxisAlignment.start,
-  //                               children: [
-  //                                 Text(result.meetingMessage),
-  //                                 const SizedBox(height: 12),
-  //                                 ...result.pointMessages.map(
-  //                                   (e) => Text("• $e"),
-  //                                 ),
-  //                               ],
-  //                             ),
-  //                           ),
-  //                           actions: [
-  //                             TextButton(
-  //                               onPressed: () => Navigator.pop(context),
-  //                               child: const Text("OK"),
-  //                             )
-  //                           ],
-  //                         ),
-  //                       );
-  //                     }
-  //                   },
-  //             style: ElevatedButton.styleFrom(
-  //               backgroundColor: primaryColor,
-  //               foregroundColor: Colors.white,
-  //               elevation: 0,
-  //               shape: RoundedRectangleBorder(
-  //                 borderRadius: BorderRadius.circular(12),
-  //               ),
-  //               padding: const EdgeInsets.symmetric(vertical: 14),
-  //             ),
-  //             icon: submitState.isLoading
-  //                 ? const SizedBox(
-  //                     width: 18,
-  //                     height: 18,
-  //                     child: CircularProgressIndicator(
-  //                       strokeWidth: 2,
-  //                       color: Colors.white,
-  //                     ),
-  //                   )
-  //                 : const Icon(
-  //                     Icons.check_circle_outline_rounded,
-  //                     size: 18,
-  //                   ),
-  //             label: Text(
-  //               submitState.isLoading
-  //                   ? "Submitting..."
-  //                   : widget.isEditing
-  //                       ? "Update Meeting"
-  //                       : "Save Meeting",
-  //               style: GoogleFonts.inter(
-  //                 fontSize: 14,
-  //                 fontWeight: FontWeight.w600,
-  //               ),
-  //             ),
-  //           ),
-  //         ),
-  //         // ElevatedButton(onPressed: () {
-  //         //   Navigator.push(context, MaterialPageRoute(builder: (context) => MOMListScreen()));
-  //         // }, child: Text('MOM List')),
-  //       ],
-  //     ),
-  //   );
-  // }
+/*  Widget _buildBottomActionBar(MeetingSubmitState submitState) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: cardBorderColor, width: 1)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => Navigator.pop(context),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: textSecondary,
+                side: const BorderSide(color: cardBorderColor),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: Text(
+                widget.isEditing ? "Cancel" : "Cancel",
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: ElevatedButton.icon(
+              onPressed: submitState.isLoading
+                  ? null
+                  : () async {
+                      if (!validateForm()) {
+                        return;
+                      }
+
+                      final staffCode = await storage.read(
+                        key: "Staff_Code",
+                      );
+
+                      /// Present Members
+                      final allPresent = <String>[
+                        if (_staffName != null) _staffName!,
+                        ...dynamicPresentMembers,
+                      ].toSet().toList();
+
+                      /// Meeting Entity
+                      final meeting = Meeting(
+                        meetingId: widget.isEditing
+                            ? widget.meetingHistory!.meetingId
+                            : "",
+                        customerCode: widget.customer.customerCode,
+                        memberPresent: allPresent.join(","),
+                        memberAbsent: dynamicAbsentMembers.join(","),
+                        meetingDateTime:
+                            "${dateController.text} ${timeController.text}",
+                        nextMeetingDate: dateController.text,
+                        entryBy: staffCode!,
+                        flag: widget.isEditing ? "U" : "I",
+                      );
+
+                      /// Discussion Points
+                      final List<DiscussionPoint> points = [];
+
+                      // for (final key in rowKeys) {
+                      //   print("Rows = ${rowKeys.length}");
+                      //   print("Points = ${points.length}");
+                      //   final row = key.currentState;
+                      //
+                      //   if (row != null) {
+                      //     points.add(
+                      //       row.getDiscussionPoint(
+                      //         entryBy: staffCode,
+                      //       ),
+                      //     );
+                      //   }
+                      // }
+                      for (int i = 0; i < rowKeys.length; i++) {
+                        print("Rows = ${rowKeys.length}");
+                        print("Points = ${points.length}");
+
+                        final row = rowKeys[i].currentState;
+
+                        if (row != null) {
+                          final isLast = i == rowKeys.length - 1;
+
+                          points.add(
+                            row.getDiscussionPoint(
+                              entryBy: staffCode,
+                              last: isLast ? "Y" : "N",
+                            ),
+                          );
+                        }
+                      }
+
+                      final request = SubmitMeetingRequest(
+                        meeting: meeting,
+                        discussionPoints: points,
+                      );
+
+                      await ref
+                          .read(meetingSubmitNotifierProvider.notifier)
+                          .submitMeeting(request);
+
+                      if (!mounted) return;
+
+                      final state = ref.read(meetingSubmitNotifierProvider);
+
+                      if (state.error != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(state.error!),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+
+                      final result = state.result;
+
+                      if (result == null) return;
+
+                      if (result.meetingSaved && result.pointsSaved) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(result.meetingMessage),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+
+                        Navigator.pop(context, true);
+                      } else {
+                        showDialog(
+                          context: context,
+                          builder: (_) => AlertDialog(
+                            title: const Text("Submission Result"),
+                            content: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(result.meetingMessage),
+                                  const SizedBox(height: 12),
+                                  ...result.pointMessages.map(
+                                    (e) => Text("• $e"),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text("OK"),
+                              )
+                            ],
+                          ),
+                        );
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              icon: submitState.isLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.check_circle_outline_rounded,
+                      size: 18,
+                    ),
+              label: Text(
+                submitState.isLoading
+                    ? "Submitting..."
+                    : widget.isEditing
+                        ? "Update Meeting"
+                        : "Save Meeting",
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          // ElevatedButton(onPressed: () {
+          //   Navigator.push(context, MaterialPageRoute(builder: (context) => MOMListScreen()));
+          // }, child: Text('MOM List')),
+        ],
+      ),
+    );
+  }*/
   Widget _buildBottomActionBar(
     MeetingSubmitState submitState,
   ) {
@@ -1059,7 +1066,131 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
                 onPressed: submitState.isLoading
                     ? null
                     : () async {
-                        // KEEP YOUR EXISTING SUBMIT CODE HERE
+                        if (!validateForm()) {
+                          return;
+                        }
+
+                        final staffCode = await storage.read(
+                          key: "Staff_Code",
+                        );
+
+                        /// Present Members
+                        final allPresent = <String>[
+                          if (_staffName != null) _staffName!,
+                          ...dynamicPresentMembers,
+                        ].toSet().toList();
+
+                        /// Meeting Entity
+                        final meeting = Meeting(
+                          meetingId: widget.isEditing
+                              ? widget.meetingHistory!.meetingId
+                              : "",
+                          customerCode: widget.customer.customerCode,
+                          memberPresent: allPresent.join(","),
+                          memberAbsent: dynamicAbsentMembers.join(","),
+                          meetingDateTime:
+                              "${dateController.text} ${timeController.text}",
+                          nextMeetingDate: dateController.text,
+                          entryBy: staffCode!,
+                          flag: widget.isEditing ? "U" : "I",
+                        );
+
+                        /// Discussion Points
+                        final List<DiscussionPoint> points = [];
+
+                        // for (final key in rowKeys) {
+                        //   print("Rows = ${rowKeys.length}");
+                        //   print("Points = ${points.length}");
+                        //   final row = key.currentState;
+                        //
+                        //   if (row != null) {
+                        //     points.add(
+                        //       row.getDiscussionPoint(
+                        //         entryBy: staffCode,
+                        //       ),
+                        //     );
+                        //   }
+                        // }
+                        for (int i = 0; i < rowKeys.length; i++) {
+                          print("Rows = ${rowKeys.length}");
+                          print("Points = ${points.length}");
+
+                          final row = rowKeys[i].currentState;
+
+                          if (row != null) {
+                            final isLast = i == rowKeys.length - 1;
+
+                            points.add(
+                              row.getDiscussionPoint(
+                                entryBy: staffCode,
+                                last: isLast ? "Y" : "N",
+                              ),
+                            );
+                          }
+                        }
+
+                        final request = SubmitMeetingRequest(
+                          meeting: meeting,
+                          discussionPoints: points,
+                        );
+
+                        await ref
+                            .read(meetingSubmitNotifierProvider.notifier)
+                            .submitMeeting(request);
+
+                        if (!mounted) return;
+
+                        final state = ref.read(meetingSubmitNotifierProvider);
+
+                        if (state.error != null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(state.error!),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+
+                        final result = state.result;
+
+                        if (result == null) return;
+
+                        if (result.meetingSaved && result.pointsSaved) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(result.meetingMessage),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+
+                          Navigator.pop(context, true);
+                        } else {
+                          showDialog(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text("Submission Result"),
+                              content: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(result.meetingMessage),
+                                    const SizedBox(height: 12),
+                                    ...result.pointMessages.map(
+                                      (e) => Text("• $e"),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text("OK"),
+                                )
+                              ],
+                            ),
+                          );
+                        }
                       },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,

@@ -407,6 +407,7 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
                 controller: pointController,
                 minLines: 4,
                 maxLines: null,
+                spellCheckConfiguration: const SpellCheckConfiguration(),
                 // keyboardType: TextInputType.multiline,
                 decoration: InputDecoration(
                   isDense: true,
