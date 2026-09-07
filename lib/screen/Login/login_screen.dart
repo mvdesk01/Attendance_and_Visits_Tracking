@@ -249,7 +249,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Column(
                           children: [
                             Image.asset(
-                              "assets/icons/graphic-design.png",
+                              "assets/icons/appLogo.png",
                               width: 100,
                               height: 110,
                             ),
