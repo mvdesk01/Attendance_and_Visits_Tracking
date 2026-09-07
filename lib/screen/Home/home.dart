@@ -40,6 +40,7 @@ import '../../service/internet_service.dart';
 import '../AdminProfile/Databasepunchout.dart';
 import '../AdminProfile/Databsepunchin.dart';
 import '../Expense/ExpenseScreen.dart';
+import '../MOM/minuetsmeeting_screen.dart';
 import '../Settings/Timer.dart';
 import '../Tour/TourmainScreen.dart';
 import '../Visit/Start Stop Visit/start_stop_visit.dart';
@@ -921,6 +922,21 @@ class _HomeScreenState extends State<HomeScreen> {
                               return MainBloc(webService: WebService());
                             },
                             child: VisitHistoryScreen())));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.location_history_outlined),
+              title: const Text('Minutes Of Meeting'),
+              onTap: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => BlocProvider(
+                              create: (context) {
+                                return MainBloc(webService: WebService());
+                              },
+                              child: MinutesOfTheMeetingFormScreen(),
+                            )));
               },
             ),
             ListTile(
@@ -3513,58 +3529,74 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final latestOut = await dbHelper.getLatestPunchOut(staffCode!);
 
+    String extractTime(dynamic value) {
+      if (value == null) return "-";
+
+      final text = value.toString().trim();
+
+      if (text.isEmpty) return "-";
+
+      if (text.contains(' ')) {
+        return text.split(RegExp(r'\s+')).last;
+      }
+
+      return text;
+    }
+
     if (!mounted) return;
-
     setState(() {
-      // Display latest IN and OUT independently
-      lastInTime = latestIn?['transaction_time'] ?? "-";
-      lastOutTime = latestOut?['transaction_time'] ?? "-";
+      lastInTime = extractTime(latestIn?['transaction_time']);
+      lastOutTime = extractTime(latestOut?['transaction_time']);
 
-      // Button state is based ONLY on latest transaction
       if (latestPunch == null) {
         isButtonDisabledIn = false;
         isButtonDisabledOut = true;
+
+        lastPunchIn = true;
+        lastPunchOut = true;
+
         return;
       }
 
       final flagValue = latestPunch['flag_value'];
 
       if (flagValue == "001") {
-        // Currently punched IN
         isButtonDisabledIn = true;
         isButtonDisabledOut = false;
+
+        lastPunchIn = false;
+        lastPunchOut = true;
       } else if (flagValue == "000") {
-        // Currently punched OUT
         isButtonDisabledIn = false;
         isButtonDisabledOut = true;
+
+        lastPunchIn = true;
+        lastPunchOut = false;
       }
     });
 
     // setState(() {
+    //   // Display latest IN and OUT independently
+    //   lastInTime = latestIn?['transaction_time'] ?? "-";
+    //   lastOutTime = latestOut?['transaction_time'] ?? "-";
+    //
+    //   // Button state is based ONLY on latest transaction
     //   if (latestPunch == null) {
-    //     // No punch history
     //     isButtonDisabledIn = false;
     //     isButtonDisabledOut = true;
-    //
-    //     lastInTime = "-";
-    //     lastOutTime = "-";
     //     return;
     //   }
     //
     //   final flagValue = latestPunch['flag_value'];
     //
     //   if (flagValue == "001") {
-    //     // Last punch was IN
+    //     // Currently punched IN
     //     isButtonDisabledIn = true;
     //     isButtonDisabledOut = false;
-    //
-    //     lastInTime = latestPunch['transaction_time'];
     //   } else if (flagValue == "000") {
-    //     // Last punch was OUT
+    //     // Currently punched OUT
     //     isButtonDisabledIn = false;
     //     isButtonDisabledOut = true;
-    //
-    //     lastOutTime = latestPunch['transaction_time'];
     //   }
     // });
   }
