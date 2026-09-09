@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:attendance_system_ios/bloc/main_bloc.dart';
 import 'package:attendance_system_ios/bloc/main_event.dart';
 import 'package:attendance_system_ios/bloc/main_state.dart';
@@ -20,7 +22,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart';
 import '../../util/MyColor.dart';
+import '../Forget Password/forgetpassword.dart';
 import '../password retrieval/password_retrieval.dart';
+import 'UpdateDeviceID.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -41,6 +45,7 @@ class _LoginScreenState extends State<LoginScreen> {
   TextEditingController _CardIdtextController = TextEditingController();
   TextEditingController _PasswordtextController = TextEditingController();
   String? mdeviceId = "";
+  static const MethodChannel _channel = MethodChannel('com.example/device_id');
 
   bool isAdminLogin = false;
   LocalAuthentication auth = LocalAuthentication();
@@ -98,22 +103,41 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<String?> _getId() async {
-    DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-    AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-    print(androidInfo.id);
-    return androidInfo.id; // This should return ANDROID_ID
+    try {
+      if (Platform.isAndroid) {
+        final String? result =
+            await _channel.invokeMethod<String>('getAndroidId');
 
-    // var deviceInfo = DeviceInfoPlugin();
-    // if (Platform.isIOS) { // import 'dart:io'
-    //   var iosDeviceInfo = await deviceInfo.iosInfo;
-    //   return iosDeviceInfo.identifierForVendor; // unique ID on iOS
-    // } else if(Platform.isAndroid) {
-    //   var androidDeviceInfo = await deviceInfo.androidInfo;
-    //   print("androidDeviceInfo "+androidDeviceInfo.toString());
-    //   print("AndroidId... "+AndroidId().getId().toString());
-    //
-    //   return AndroidId().getId(); // unique ID on Android
-    // }
+        print("Android Device ID: $result");
+        LogFileManager.writeLog("Android Device ID: $result");
+
+        return result;
+      }
+
+      if (Platform.isIOS) {
+        DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+        IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+
+        final String? deviceId = iosInfo.identifierForVendor;
+
+        print("iOS Device ID: $deviceId");
+        LogFileManager.writeLog("iOS Device ID: $deviceId");
+
+        return deviceId;
+      }
+
+      return null;
+    } on PlatformException catch (e) {
+      print("Failed to get Device ID: ${e.message}");
+      LogFileManager.writeLog("Failed to get Device ID: ${e.message}");
+
+      return null;
+    } catch (e) {
+      print("Error getting Device ID: $e");
+      LogFileManager.writeLog("Error getting Device ID: $e");
+
+      return null;
+    }
   }
 
   @override
@@ -135,243 +159,320 @@ class _LoginScreenState extends State<LoginScreen> {
         valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
       ),
       child: BlocListener<MainBloc, MainState>(
-          listener: (context, state) async {
-            if (state is LoginLoadingState) {
-              setState(() {
-                _isLoading = true;
-              });
-            } else if (state is LoginLoadedState) {
-              setState(() {
-                _isLoading = false;
-              });
-              if (state.loginResponse?.message != null) {
-                print("Login successfull!!!");
-                // Fluttertoast.showToast(
-                //   msg: "   Login Successfully...!   ",
-                //   toastLength: Toast.LENGTH_SHORT,
-                //   timeInSecForIosWeb: 1,
-                // );
+        listener: (context, state) async {
+          if (state is LoginLoadingState) {
+            setState(() {
+              _isLoading = true;
+            });
+          } else if (state is LoginLoadedState) {
+            setState(() {
+              _isLoading = false;
+            });
+            if (state.loginResponse?.message != null) {
+              print("Login successfull!!!");
+              // Fluttertoast.showToast(
+              //   msg: "   Login Successfully...!   ",
+              //   toastLength: Toast.LENGTH_SHORT,
+              //   timeInSecForIosWeb: 1,
+              // );
 
-                // Store Auth Token and other details
-                await storage.write(
-                    key: 'Auth_Token',
-                    value: state.loginResponse!.token!.result!.token);
-                await storage.write(
-                    key: 'Staff_Code',
-                    value: state.loginResponse!.message!.staffCode);
-                await storage.write(
-                    key: 'Staff_Name',
-                    value: state.loginResponse!.message!.displayName);
+              // Store Auth Token and other details
+              await storage.write(
+                  key: 'Auth_Token',
+                  value: state.loginResponse!.token!.result!.token);
+              await storage.write(
+                  key: 'Staff_Code',
+                  value: state.loginResponse!.message!.staffCode);
+              await storage.write(
+                  key: 'Staff_Name',
+                  value: state.loginResponse!.message!.displayName);
 
-                SharedPreferences prefs = await SharedPreferences.getInstance();
+              SharedPreferences prefs = await SharedPreferences.getInstance();
 
-                // Save values to shared preferences
-                await prefs.setString('Auth_TokenVal',
-                    state.loginResponse!.token!.result!.token.toString());
-                String? Auth_TokenVall = prefs.getString("Auth_TokenVal");
+              // Save values to shared preferences
+              await prefs.setString('Auth_TokenVal',
+                  state.loginResponse!.token!.result!.token.toString());
+              String? Auth_TokenVall = prefs.getString("Auth_TokenVal");
 
-                print(isloggedIn);
-                print("HEREEEEEEEEEEEEEEEEEEEEEEEEEE " + Auth_TokenVall!);
-                if (isAdminLogin) {
-                  // Admin login does not require device ID check
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => BlocProvider(
-                        create: (context) {
-                          return MainBloc(webService: WebService());
-                        },
-                        child: AdminHomeScreen(),
-                      ),
+              print(isloggedIn);
+              print("HEREEEEEEEEEEEEEEEEEEEEEEEEEE " + Auth_TokenVall!);
+              if (isAdminLogin) {
+                // Admin login does not require device ID check
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => BlocProvider(
+                      create: (context) {
+                        return MainBloc(webService: WebService());
+                      },
+                      child: AdminHomeScreen(),
+                    ),
+                  ),
+                );
+              } else {
+                // User login - check registered device UUID
+                String? responseDeviceId = state.loginResponse!.message!.uuid;
+
+                String? staffCode = state.loginResponse!.message!.staffCode;
+
+                print("Database response Device Id: $responseDeviceId");
+                LogFileManager.writeLog(
+                    "Database response Device Id: $responseDeviceId");
+
+                // Get current device ID
+                String? currentDeviceId = await _getId();
+
+                print("Current device Id: $currentDeviceId");
+                LogFileManager.writeLog("Current device Id: $currentDeviceId");
+
+                // Safety check - unable to get device ID
+                if (currentDeviceId == null || currentDeviceId.trim().isEmpty) {
+                  print("Unable to get current device ID.");
+                  LogFileManager.writeLog("Unable to get current device ID.");
+
+                  Fluttertoast.showToast(
+                    msg: "Unable to identify this device.",
+                    toastLength: Toast.LENGTH_LONG,
+                  );
+
+                  return;
+                }
+
+                // UUID is empty/null
+                // This means the user has not registered a device yet.
+                if (responseDeviceId == null ||
+                    responseDeviceId.trim().isEmpty) {
+                  print("UUID is empty. Registering current device.");
+                  LogFileManager.writeLog(
+                      "UUID is empty. Registering current device.");
+
+                  // Update UUID using existing UpdateUUID API
+                  _mainBloc.add(
+                    UpdateUUID(
+                      UserId: staffCode!,
+                      UUID: currentDeviceId,
+                      UUIDFlag: "Y",
                     ),
                   );
-                } else {
+
+                  // Continue login immediately, same as previous behavior
+                  print("Proceeding with biometric authentication.");
+                  LogFileManager.writeLog(
+                      "Proceeding with biometric authentication.");
+
                   await checkBiometrics();
                 }
-                // else {
-                //   // For user login, verify device ID
-                //   String? responseDeviceId =state.loginResponse!.message!.uuid;
-                //   print("Database response Device Id: ${state.loginResponse!.message!.uuid}");
-                //   print("Current device Id: ${AndroidId().getId()}");// Device ID from response
-                //   String? deviceId= await   _getId();
-                //   print("deviceIdddd: ${deviceId}");// Device ID from response
-                //   await checkBiometrics();
-                //    if (responseDeviceId == deviceId) {
-                //     Fluttertoast.showToast(
-                //       msg: "   Login Successfully...!   ",
-                //       toastLength: Toast.LENGTH_SHORT,
-                //       timeInSecForIosWeb: 1,
-                //     );
-                //     // Navigate to User Home Screen
-                //     Navigator.pushReplacement(
-                //       context,
-                //       MaterialPageRoute(
-                //         builder: (_) => BlocProvider(
-                //           create: (context) {
-                //             return MainBloc(webService: WebService());
-                //           },
-                //           child: HomeScreen(),
-                //         ),
-                //       ),
-                //     );
-                //   await checkBiometrics();
-                //   }
-                //    else if(false) {
-                //     Fluttertoast.showToast(
-                //       msg: 'Please Login from Registered Device',
-                //       toastLength: Toast.LENGTH_SHORT,
-                //       timeInSecForIosWeb: 2,
-                //     );
-                //   }
-                // }
-              } else {
-                // uncomment if login gives the issue in second time login
-                storage.delete(key: 'username');
-                storage.delete(key: 'password');
+
+                // UUID exists and matches current device
+                else if (responseDeviceId == currentDeviceId) {
+                  print("Device ID validation passed.");
+                  LogFileManager.writeLog("Device ID validation passed.");
+
+                  await checkBiometrics();
+                }
+
+                // UUID exists but belongs to another device
+                else {
+                  print("Device ID validation failed.");
+                  LogFileManager.writeLog("Device ID validation failed. "
+                      "Registered Device: $responseDeviceId, "
+                      "Current Device: $currentDeviceId");
+
+                  Fluttertoast.showToast(
+                    msg: "Login using registered device",
+                    toastLength: Toast.LENGTH_LONG,
+                    timeInSecForIosWeb: 1,
+                  );
+                }
               }
-            } else if (state is LoginErrorState) {
-              print("login error state message");
-              // if(state.msg ==)
-              setState(() {
-                _isLoading = false;
-              });
+              // else {
+              //   await checkBiometrics();
+              // }
+              // else {
+              //   // For user login, verify device ID
+              //   String? responseDeviceId =state.loginResponse!.message!.uuid;
+              //   print("Database response Device Id: ${state.loginResponse!.message!.uuid}");
+              //   print("Current device Id: ${AndroidId().getId()}");// Device ID from response
+              //   String? deviceId= await   _getId();
+              //   print("deviceIdddd: ${deviceId}");// Device ID from response
+              //   await checkBiometrics();
+              //    if (responseDeviceId == deviceId) {
+              //     Fluttertoast.showToast(
+              //       msg: "   Login Successfully...!   ",
+              //       toastLength: Toast.LENGTH_SHORT,
+              //       timeInSecForIosWeb: 1,
+              //     );
+              //     // Navigate to User Home Screen
+              //     Navigator.pushReplacement(
+              //       context,
+              //       MaterialPageRoute(
+              //         builder: (_) => BlocProvider(
+              //           create: (context) {
+              //             return MainBloc(webService: WebService());
+              //           },
+              //           child: HomeScreen(),
+              //         ),
+              //       ),
+              //     );
+              //   await checkBiometrics();
+              //   }
+              //    else if(false) {
+              //     Fluttertoast.showToast(
+              //       msg: 'Please Login from Registered Device',
+              //       toastLength: Toast.LENGTH_SHORT,
+              //       timeInSecForIosWeb: 2,
+              //     );
+              //   }
+              // }
+            } else {
+              // uncomment if login gives the issue in second time login
+              storage.delete(key: 'username');
+              storage.delete(key: 'password');
             }
-          },
-          child: CustomScrollView(
-            slivers: [
-              SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Column(
-                      // mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        const SizedBox(height: 200),
-                        Column(
+          } else if (state is LoginErrorState) {
+            print("login error state message");
+            // if(state.msg ==)
+            setState(() {
+              _isLoading = false;
+            });
+          }
+        },
+        child: SafeArea(
+            child: CustomScrollView(
+          slivers: [
+            SliverFillRemaining(
+                hasScrollBody: false,
+                child: Column(
+                    // mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 100),
+                      Column(
+                        children: [
+                          Image.asset(
+                            "assets/icons/graphic-design.png",
+                            width: 100,
+                            height: 110,
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            "Attendance System",
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            "Sign in to continue",
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 30),
+                      const Text(
+                        "Login",
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 20,
+                        ),
+                      ),
+                      SizedBox(height: 5),
+                      const SizedBox(height: 30),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 32, vertical: 12),
+                        child: TextFormField(
+                          controller: _CardIdtextController,
+                          decoration: InputDecoration(
+                            labelText: 'Staff Code',
+                            prefixIcon: const Icon(Icons.badge_outlined),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 32, vertical: 12),
+                        child: TextFormField(
+                          controller: _PasswordtextController,
+                          obscureText: passwordVisibility,
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                passwordVisibility
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  passwordVisibility = !passwordVisibility;
+                                });
+                              },
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Row(
                           children: [
-                            Image.asset(
-                              "assets/icons/graphic-design.png",
-                              width: 100,
-                              height: 110,
-                            ),
-                            SizedBox(height: 12),
-                            Text(
-                              "Attendance System",
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              "Sign in to continue",
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.black54,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 30),
-                        const Text(
-                          "LOGIN",
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 20,
-                          ),
-                        ),
-                        SizedBox(height: 5),
-                        const SizedBox(height: 30),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 32, vertical: 12),
-                          child: TextFormField(
-                            controller: _CardIdtextController,
-                            decoration: InputDecoration(
-                              labelText: 'Staff Code',
-                              prefixIcon: const Icon(Icons.badge_outlined),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 32, vertical: 12),
-                          child: TextFormField(
-                            controller: _PasswordtextController,
-                            obscureText: passwordVisibility,
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              prefixIcon: const Icon(Icons.lock_outline),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  passwordVisibility
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                ),
-                                onPressed: () {
+                            Transform.scale(
+                              scale: 0.9,
+                              child: CupertinoSwitch(
+                                value: _switchValue,
+                                activeColor: MyColors.lightBlue,
+                                onChanged: (value) {
                                   setState(() {
-                                    passwordVisibility = !passwordVisibility;
+                                    _switchValue = value;
                                   });
                                 },
                               ),
-                              border: OutlineInputBorder(
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              "Remember me",
+                              style: TextStyle(fontSize: 14),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 32, vertical: 20),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: MyColors.lightBlue,
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
-                          child: Row(
-                            children: [
-                              Transform.scale(
-                                scale: 0.9,
-                                child: CupertinoSwitch(
-                                  value: _switchValue,
-                                  activeColor: MyColors.darkBlue,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _switchValue = value;
-                                    });
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                "Remember me",
-                                style: TextStyle(fontSize: 14),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 32, vertical: 20),
-                          child: SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: MyColors.darkBlue,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                              onPressed: _validation,
-                              child: const Text(
-                                'Sign In',
-                                style: TextStyle(
-                                    fontSize: 16,
-                                    color: MyColors.whiteColorCode),
-                              ),
+                            onPressed: _validation,
+                            child: const Text(
+                              'LOGIN',
+                              style: TextStyle(fontSize: 16),
                             ),
                           ),
                         ),
-                        Row(
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             TextButton(
@@ -383,18 +484,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                           const PasswordRetrieval()),
                                 );
                               },
-                              child: const Text("Password Retrieval"),
+                              child: const Text("Password\nRetrieval"),
                             ),
-                            // TextButton(
-                            //   onPressed: () {
-                            //     Navigator.push(
-                            //       context,
-                            //       MaterialPageRoute(builder: (_) => const ForgotPassword()),
-                            //     );
-                            //   },
-                            //   child: const Text("Forgot Password?"),
-                            // ),
-                            const SizedBox(width: 10),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => const ForgotPassword()),
+                                );
+                              },
+                              child: const Text(
+                                  " Forgot Password?\n(only for operators) "),
+                            ),
+                            // const SizedBox(width: 10),
                             TextButton(
                               onPressed: () {
                                 Navigator.push(
@@ -407,9 +510,27 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ],
                         ),
-                      ])),
-            ],
-          )),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (context) =>
+                                            Updatedeviceid()));
+                                //Navigator.push(context, MaterialPageRoute(builder: (context)=> Updatedeviceidnew()));
+                              },
+                              child: const Text(
+                                  'Switched To New Device?Register New Device Here!'))
+                        ],
+                      )
+                    ])),
+          ],
+        )),
+      ),
     );
   }
 
