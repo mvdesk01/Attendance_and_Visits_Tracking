@@ -176,7 +176,16 @@ class _HomeScreenState extends State<HomeScreen> {
     await getData();
     await _checkAndRequestLocationPermission();
 
-    await _restorePunchState();
+    ///new changes
+    final nightShift = await isNightShift();
+    if (nightShift) {
+      // NIGHT SHIFT → SQLite state
+      await _restorePunchState();
+    } else {
+      // DAY SHIFT → existing date-wise API behavior
+      await _updateButtonInitialState();
+    }
+    // await _restorePunchState();
     // await _updateButtonInitialsqliteState();
     // await _updateButtonInitialState();
   }
