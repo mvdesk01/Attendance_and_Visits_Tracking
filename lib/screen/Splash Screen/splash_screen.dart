@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:loading_overlay/loading_overlay.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -35,6 +36,8 @@ class _SplashScreenState extends State<SplashScreen> {
   MainBloc? _mainBloc;
   bool _isLoading = false;
   bool isAdminLogin = false;
+  String appVersion = "";
+
 
   @override
   void initState() {
@@ -59,9 +62,16 @@ class _SplashScreenState extends State<SplashScreen> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    appVersion = info.version;
+  }
+
   Future<void> _initializeApp() async {
     await requestPermissions();
     await clearKeychainValues();
+    _loadVersion();
+
 
     bool hasInternet = await InternetService().hasInternetAccess();
     if (!hasInternet) {
@@ -392,7 +402,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   Hero(
                     tag: 'app_logo',
                     child: Image.asset(
-                      "assets/icons/graphic-design.png",
+                      "assets/icons/appLogo.png",
                       width: 120,
                       height: 120,
                     ),
@@ -430,7 +440,8 @@ class _SplashScreenState extends State<SplashScreen> {
                           MyColors.appDefaultColorCode),
                     ),
                     const SizedBox(height: 24),
-                    Text(
+                    Text("AppVersion: $appVersion"),
+                    const Text(
                       "@ 2025 M-Tech Innovations Ltd Pune\nAttendance System",
                       textAlign: TextAlign.center,
                       style: TextStyle(
