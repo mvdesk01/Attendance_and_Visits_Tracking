@@ -205,46 +205,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   );
                 }
-                /*else {
-                  // User login - check registered device UUID
-                  String? responseDeviceId = state.loginResponse!.message!.uuid;
-
-                  print("Database response Device Id: $responseDeviceId");
-                  LogFileManager.writeLog(
-                      "Database response Device Id: $responseDeviceId");
-
-                  // Get current device ID
-                  String? currentDeviceId = await _getId();
-
-                  print("Current device Id: $currentDeviceId");
-                  LogFileManager.writeLog(
-                      "Current device Id: $currentDeviceId");
-
-                  // If UUID is blank/null OR matches current device ID,
-                  // allow biometric authentication.
-                  if (responseDeviceId == null ||
-                      responseDeviceId.trim().isEmpty ||
-                      responseDeviceId == currentDeviceId) {
-                    print("Device ID validation passed.");
-                    LogFileManager.writeLog("Device ID validation passed.");
-
-                    await checkBiometrics();
-                  } else {
-                    // UUID exists but does not match current device
-                    print("Device ID validation failed.");
-                    LogFileManager.writeLog(
-                        "Device ID validation failed. Registered Device: "
-                        "$responseDeviceId, Current Device: $currentDeviceId");
-
-                    Fluttertoast.showToast(
-                      msg: "Login using registered device",
-                      toastLength: Toast.LENGTH_LONG,
-                      timeInSecForIosWeb: 1,
-                    );
-                  }
-                }*/
-
-                /*       else {
+                       else {
                   // User login - check registered device UUID
                   String? responseDeviceId = state.loginResponse!.message!.uuid;
 
@@ -321,11 +282,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       timeInSecForIosWeb: 1,
                     );
                   }
-                }*/
-
-                else {
-                  await checkBiometrics();
                 }
+              /*  else {
+                  await checkBiometrics();
+                }*/
               } else {
                 // uncomment if login gives the issue in second time login
                 storage.delete(key: 'username');

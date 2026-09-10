@@ -213,7 +213,7 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
-/*  Future<void> _checkRememberMe() async {
+  Future<void> _checkRememberMe() async {
     String storedUsername = 'Null';
     String storedPassword = 'Null';
     try {
@@ -241,62 +241,6 @@ class _SplashScreenState extends State<SplashScreen> {
         ),
       );
     }
-  }*/
-  Future<void> _checkRememberMe() async {
-    String? storedUsername;
-    String? storedPassword;
-
-    try {
-      storedUsername = await storage.read(key: 'username');
-      storedPassword = await storage.read(key: 'password');
-    } catch (e) {
-      LogFileManager.writeLog(
-        "Error reading remembered credentials: $e",
-      );
-
-      await storage.delete(key: 'username');
-      await storage.delete(key: 'password');
-
-      if (!mounted) return;
-
-      await _logoutAndGoToLogin();
-      return;
-    }
-
-    // No remembered credentials
-    if (storedUsername == null ||
-        storedUsername!.isEmpty ||
-        storedPassword == null ||
-        storedPassword!.isEmpty) {
-      if (!mounted) return;
-
-      await Future.delayed(const Duration(seconds: 1));
-
-      if (!mounted) return;
-
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => BlocProvider(
-            create: (_) => MainBloc(webService: WebService()),
-            child: const LoginScreen(),
-          ),
-        ),
-      );
-
-      return;
-    }
-
-    // Check admin
-    isAdminLogin =
-        (storedUsername == "mzdl002" && storedPassword == "Admin@123\$");
-
-    // Automatically attempt login with remembered credentials
-    _mainBloc?.add(
-      LoginEvents(
-        username: storedUsername!,
-        password: storedPassword!,
-      ),
-    );
   }
 
   @override
