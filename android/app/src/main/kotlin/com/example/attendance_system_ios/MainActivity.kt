@@ -12,37 +12,30 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-
-// * MainActivity inherits from [FlutterFragmentActivity] instead of [FlutterActivity].
-// * This is necessary if the application uses plugins that require a FragmentActivity,
-// * such as local_auth or other UI-related native components.
-// */
-class MainActivity: FlutterFragmentActivity() {
-    // Unique identifier for the MethodChannel bridge between Dart and Kotlin
+class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "battery_optimization"
+    private val DEVICE_ID_CHANNEL = "com.example/device_id"
 
-//     * configureFlutterEngine is called when the Flutter engine is initialized.
-//     * Use this method to register platform-specific plugins and set up Method Channels.
-//     */
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // Initialize MethodChannel to listen for calls from the Flutter side
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
-            // Handle specific method calls defined in Dart
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            CHANNEL
+        ).setMethodCallHandler { call, result ->
             if (call.method == "requestIgnoreBatteryOptimizations") {
-                // Open the system intent to request exemption from battery optimization
                 val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
                 val packageName = applicationContext.packageName
                 if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:$packageName"))
+                    val intent = Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName")
+                    )
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     startActivity(intent)
                 }
                 result.success(true)
             } else if (call.method == "isIgnoringBatteryOptimizations") {
-                // Check whether the app is currently on the battery optimization whitelist.
                 val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
                 val packageName = applicationContext.packageName
                 result.success(pm.isIgnoringBatteryOptimizations(packageName))
@@ -50,10 +43,27 @@ class MainActivity: FlutterFragmentActivity() {
                 result.notImplemented()
             }
         }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DEVICE_ID_CHANNEL
+        ).setMethodCallHandler { call, result ->
+
+            if (call.method == "getAndroidId") {
+
+                val androidId = Settings.Secure.getString(
+                    contentResolver,
+                    Settings.Secure.ANDROID_ID
+                )
+
+                result.success(androidId)
+
+            } else {
+                result.notImplemented()
+            }
+        }
     }
 }
-
-
 
 
 /*import android.annotation.SuppressLint
@@ -81,15 +91,15 @@ import io.flutter.embedding.android.FlutterActivity*/
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }*/
 
-   /* private val CHANNEL = "com.flutter_attendance/play_integrity_check"
+/* private val CHANNEL = "com.flutter_attendance/play_integrity_check"
 
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
+ override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+     super.configureFlutterEngine(flutterEngine)
+     MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+         .setMethodCallHandler { call, result ->
+             when (call.method) {
 
-                   *//* "checkAppIntegrity" -> {
+                *//* "checkAppIntegrity" -> {
                         checkAppIntegrity(result)
 //                        result.success(null)
                     }*//*

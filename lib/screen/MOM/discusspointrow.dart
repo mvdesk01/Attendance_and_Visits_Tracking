@@ -47,10 +47,17 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
   void initState() {
     super.initState();
 
+    targetDateController.text = DateFormat("dd/MM/yyyy").format(DateTime.now());
+
     if (widget.initialData != null) {
       pointController.text = widget.initialData!["point"] ?? "";
       discussedController.text = widget.initialData!["discussedWith"] ?? "";
-      targetDateController.text = widget.initialData!["targetDate"] ?? "";
+      //targetDateController.text = widget.initialData!["targetDate"] ?? "";
+      final existingTargetDate = widget.initialData!["targetDate"]?.trim();
+
+      if (existingTargetDate != null && existingTargetDate.isNotEmpty) {
+        targetDateController.text = existingTargetDate;
+      }
 
       decision = widget.initialData!["decisionTaken"];
 
@@ -313,7 +320,6 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
   // ============================================================
   // BUILD
   // ============================================================
-
   @override
   Widget build(BuildContext context) {
     final decisionState = ref.watch(decisionNotifierProvider);
@@ -334,7 +340,6 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
         selectedDecisionCode = match.first.decisionCode;
       }
     }
-
     // Restore responsibility when editing an existing MOM.
     // if (selectedMembers.isEmpty &&
     //     selectedMemberNames.isNotEmpty &&
@@ -349,7 +354,6 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
     // ============================================================
 // RESTORE RESPONSIBILITY WHEN EDITING
 // ============================================================
-
     if (widget.isExisting && selectedMembers.isEmpty) {
       final customer = Responsibility(
         userCode: widget.customerCode,
@@ -386,7 +390,6 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
             // ==================================================
             // SERIAL NUMBER
             // ==================================================
-
             cell(
               width: 30,
               child: Center(
@@ -395,17 +398,16 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
                 ),
               ),
             ),
-
             // ==================================================
             // POINT
             // ==================================================
-
             cell(
               width: 320,
               child: TextFormField(
                 controller: pointController,
                 minLines: 4,
                 maxLines: null,
+                spellCheckConfiguration: const SpellCheckConfiguration(),
                 // keyboardType: TextInputType.multiline,
                 decoration: InputDecoration(
                   isDense: true,
@@ -417,11 +419,9 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
                 ),
               ),
             ),
-
             // ==================================================
             // DISCUSSED WITH
             // ==================================================
-
             cell(
               width: 180,
               child: SizedBox.expand(
@@ -440,11 +440,6 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
                 ),
               ),
             ),
-
-            // ==================================================
-            // DECISION
-            // ==================================================
-
             cell(
               width: 200,
               child: SizedBox.expand(
@@ -478,7 +473,6 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
                         );
                       },
                     ),
-
                     // Custom decision option
                     const DropdownMenuItem<String>(
                       value: addCustomDecisionValue,
@@ -508,7 +502,6 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
                     if (value == null) {
                       return;
                     }
-
                     if (value == addCustomDecisionValue) {
                       // IMPORTANT:
                       // Do not open the dialog directly from the dropdown callback.
@@ -518,73 +511,28 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
 
                         _showAddCustomDecisionDialog();
                       });
-
                       return;
                     }
-
                     // Normal decision
                     final selected = decisionState.decisions
                         .where(
                           (item) => item.decisionName == value,
                         )
                         .firstOrNull;
-
                     if (selected == null) {
                       return;
                     }
-
                     setState(() {
                       decision = selected.decisionName;
                       selectedDecisionCode = selected.decisionCode;
                     });
                   },
-                  // onChanged: (value) async {
-                  //   if (value == null) {
-                  //     return;
-                  //   }
-                  //
-                  //   // User selected:
-                  //   // + Add Custom Decision
-                  //   // if (value == addCustomDecisionValue) {
-                  //   //   await _showAddCustomDecisionDialog();
-                  //   //   return;
-                  //   // }
-                  //   if (value == addCustomDecisionValue) {
-                  //     // Let the dropdown overlay close first.
-                  //     await Future<void>.delayed(
-                  //       const Duration(milliseconds: 100),
-                  //     );
-                  //
-                  //     if (!mounted) return;
-                  //
-                  //     await _showAddCustomDecisionDialog();
-                  //     return;
-                  //   }
-                  //   // Normal decision
-                  //   final selected = decisionState.decisions
-                  //       .where(
-                  //         (item) => item.decisionName == value,
-                  //       )
-                  //       .firstOrNull;
-                  //
-                  //   if (selected == null) {
-                  //     return;
-                  //   }
-                  //
-                  //   setState(() {
-                  //     decision = selected.decisionName;
-                  //
-                  //     selectedDecisionCode = selected.decisionCode;
-                  //   });
-                  // },
                 ),
               ),
             ),
-
             // ==================================================
             // RESPONSIBILITY
             // ==================================================
-
             cell(
               width: 260,
               child: DropdownSearch<Responsibility>.multiSelection(
@@ -639,11 +587,9 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
                 },
               ),
             ),
-
             // ==================================================
             // TARGET DATE
             // ==================================================
-
             cell(
               width: 170,
               child: SizedBox.expand(
@@ -668,11 +614,9 @@ class DiscussionPointRowState extends ConsumerState<DiscussionPointRow> {
                 ),
               ),
             ),
-
             // ==================================================
             // DELETE
             // ==================================================
-
             cell(
               width: 40,
               child: Center(

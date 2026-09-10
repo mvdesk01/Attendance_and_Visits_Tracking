@@ -86,11 +86,6 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
           .loadResponsibility();
     });
 
-    // if (widget.isEditing && widget.meetingHistory != null) {
-    //   _initializeFromMeeting();
-    // } else {
-    // Default initialization
-    //selectedDate = DateTime.now();
     selectedDate = widget.selectedMeetingDate ?? DateTime.now();
     selectedTime = TimeOfDay.now();
     dateController.text = DateFormat('dd/MM/yyyy').format(selectedDate);
@@ -98,8 +93,10 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
         "${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}";
 
     addDiscussionRow();
-    //}
   }
+
+  @override
+  void onBackpressed() {}
 
   void _initializeFromMeeting() {
     final meeting = widget.meetingHistory!;
@@ -208,6 +205,37 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
     });
   }
 
+  Future<bool> _confirmBack() async {
+    final shouldGoBack = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Go Back?"),
+          content: const Text(
+            "Do you want to go back? Any unsaved data will be lost.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text("No"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: const Text("Yes"),
+            ),
+          ],
+        );
+      },
+    );
+
+    return shouldGoBack ?? false;
+  }
+
   bool validateForm() {
     // Meeting Date
     if (dateController.text.trim().isEmpty) {
@@ -263,14 +291,13 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
 
   void addDiscussionRow() {
     setState(() {
-      rowKeys.insert(
-        0,
+      rowKeys.add(
         GlobalKey<DiscussionPointRowState>(),
       );
 
-      initialDiscussionPoints.insert(0, {});
+      initialDiscussionPoints.add({});
 
-      rowIsExisting.insert(0, false);
+      rowIsExisting.add(false);
 
       _rebuildDiscussionRows();
     });
@@ -358,51 +385,72 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
   @override
   Widget build(BuildContext context) {
     final submitState = ref.watch(meetingSubmitNotifierProvider);
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: textPrimary, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          widget.isEditing ? "Update Meeting Details" : "Add New Meeting",
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w700,
-            fontSize: 18.0,
-            color: textPrimary,
-          ),
-        ),
-        centerTitle: true,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(color: cardBorderColor, height: 1.0),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildMeetingDetailsCard(),
-              const SizedBox(height: 24),
-              DiscussionPointTable(
-                rows: discussionRows,
-                onAdd: addDiscussionRow,
+
+    return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+
+          final shouldGoBack = await _confirmBack();
+
+          if (shouldGoBack && mounted) {
+            Navigator.of(context).pop();
+          }
+        },
+        child: Scaffold(
+          backgroundColor: backgroundColor,
+          appBar: AppBar(
+            elevation: 0,
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                  color: textPrimary, size: 20),
+              onPressed: () async {
+                final shouldGoBack = await _confirmBack();
+
+                if (shouldGoBack && mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+            title: Text(
+              widget.isEditing ? "Update Meeting Details" : "Add New Meeting",
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w700,
+                fontSize: 18.0,
+                color: textPrimary,
               ),
-              const SizedBox(height: 16),
-            ],
+            ),
+            centerTitle: true,
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(1.0),
+              child: Container(color: cardBorderColor, height: 1.0),
+            ),
           ),
-        ),
-      ),
-      bottomNavigationBar: _buildBottomActionBar(submitState),
-    );
+          body: SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                20, 20, 20, 100, // important
+              ),
+              // padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildMeetingDetailsCard(),
+                  const SizedBox(height: 24),
+                  DiscussionPointTable(
+                    rows: discussionRows,
+                    onAdd: addDiscussionRow,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+          bottomNavigationBar: _buildBottomActionBar(submitState),
+        ));
   }
 
   Widget _buildMeetingDetailsCard() {
@@ -759,9 +807,7 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
     );
   }
 
-  Widget _buildBottomActionBar(
-    MeetingSubmitState submitState,
-  ) {
+/*  Widget _buildBottomActionBar(MeetingSubmitState submitState) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
@@ -959,6 +1005,229 @@ class _AddMeetingScreenState extends ConsumerState<AddMeetingScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }*/
+  Widget _buildBottomActionBar(
+    MeetingSubmitState submitState,
+  ) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(
+          16,
+          12,
+          16,
+          12,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            top: BorderSide(
+              color: cardBorderColor,
+              width: 1,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: textSecondary,
+                  side: const BorderSide(
+                    color: cardBorderColor,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                  ),
+                ),
+                child: Text(
+                  "Cancel",
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: ElevatedButton.icon(
+                onPressed: submitState.isLoading
+                    ? null
+                    : () async {
+                        if (!validateForm()) {
+                          return;
+                        }
+
+                        final staffCode = await storage.read(
+                          key: "Staff_Code",
+                        );
+
+                        /// Present Members
+                        final allPresent = <String>[
+                          if (_staffName != null) _staffName!,
+                          ...dynamicPresentMembers,
+                        ].toSet().toList();
+
+                        /// Meeting Entity
+                        final meeting = Meeting(
+                          meetingId: widget.isEditing
+                              ? widget.meetingHistory!.meetingId
+                              : "",
+                          customerCode: widget.customer.customerCode,
+                          memberPresent: allPresent.join(","),
+                          memberAbsent: dynamicAbsentMembers.join(","),
+                          meetingDateTime:
+                              "${dateController.text} ${timeController.text}",
+                          nextMeetingDate: dateController.text,
+                          entryBy: staffCode!,
+                          flag: widget.isEditing ? "U" : "I",
+                        );
+
+                        /// Discussion Points
+                        final List<DiscussionPoint> points = [];
+
+                        // for (final key in rowKeys) {
+                        //   print("Rows = ${rowKeys.length}");
+                        //   print("Points = ${points.length}");
+                        //   final row = key.currentState;
+                        //
+                        //   if (row != null) {
+                        //     points.add(
+                        //       row.getDiscussionPoint(
+                        //         entryBy: staffCode,
+                        //       ),
+                        //     );
+                        //   }
+                        // }
+                        for (int i = 0; i < rowKeys.length; i++) {
+                          print("Rows = ${rowKeys.length}");
+                          print("Points = ${points.length}");
+
+                          final row = rowKeys[i].currentState;
+
+                          if (row != null) {
+                            final isLast = i == rowKeys.length - 1;
+
+                            points.add(
+                              row.getDiscussionPoint(
+                                entryBy: staffCode,
+                                last: isLast ? "Y" : "N",
+                              ),
+                            );
+                          }
+                        }
+
+                        final request = SubmitMeetingRequest(
+                          meeting: meeting,
+                          discussionPoints: points,
+                        );
+
+                        await ref
+                            .read(meetingSubmitNotifierProvider.notifier)
+                            .submitMeeting(request);
+
+                        if (!mounted) return;
+
+                        final state = ref.read(meetingSubmitNotifierProvider);
+
+                        if (state.error != null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(state.error!),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+
+                        final result = state.result;
+
+                        if (result == null) return;
+
+                        if (result.meetingSaved && result.pointsSaved) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(result.meetingMessage),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+
+                          Navigator.pop(context, true);
+                        } else {
+                          showDialog(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text("Submission Result"),
+                              content: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(result.meetingMessage),
+                                    const SizedBox(height: 12),
+                                    ...result.pointMessages.map(
+                                      (e) => Text("• $e"),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text("OK"),
+                                )
+                              ],
+                            ),
+                          );
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                  ),
+                ),
+                icon: submitState.isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.check_circle_outline_rounded,
+                        size: 18,
+                      ),
+                label: Text(
+                  submitState.isLoading
+                      ? "Submitting..."
+                      : widget.isEditing
+                          ? "Update Meeting"
+                          : "Save Meeting",
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

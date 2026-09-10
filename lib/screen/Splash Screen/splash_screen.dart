@@ -39,10 +39,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // _initializeApp();
-    // WidgetsBinding.instance.addPostFrameCallback((_) {
-    //   AppUpdateService.checkAndUpdate(context);
-    // });
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // optional small delay for smoother UI
       await Future.delayed(const Duration(milliseconds: 300));
@@ -181,6 +178,41 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
+//
+  Future<void> _logoutAndGoToLogin() async {
+    try {
+      // Clear remembered login credentials
+      await storage.delete(key: 'username');
+      await storage.delete(key: 'password');
+
+      // Clear authentication/session data as well
+      await storage.delete(key: 'Auth_Token');
+      await storage.delete(key: 'Staff_Code');
+      await storage.delete(key: 'Staff_Name');
+
+      final prefs = await SharedPreferences.getInstance();
+
+      // Clear stored token from SharedPreferences
+      await prefs.remove('Auth_TokenVal');
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => BlocProvider(
+            create: (_) => MainBloc(webService: WebService()),
+            child: const LoginScreen(),
+          ),
+        ),
+        (route) => false,
+      );
+    } catch (e) {
+      LogFileManager.writeLog(
+        "Error while logging out from splash: $e",
+      );
+    }
+  }
+
   Future<void> _checkRememberMe() async {
     String storedUsername = 'Null';
     String storedPassword = 'Null';
@@ -223,15 +255,20 @@ class _SplashScreenState extends State<SplashScreen> {
           color: MyColors.appDefaultColorCode,
         ),
         child: BlocListener<MainBloc, MainState>(
-          listener: (context, state) {
+          listener: (context, state) async {
             if (state is LoginLoadingState) {
               setState(() => _isLoading = true);
             } else if (state is LoginLoadedState) {
+              if (!mounted) return;
               setState(() => _isLoading = false);
+
               if (state.loginResponse?.token?.result?.token != null) {
                 storage.write(
                     key: 'Auth_Token',
                     value: state.loginResponse!.token!.result!.token);
+
+                if (!mounted) return;
+
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
@@ -243,18 +280,30 @@ class _SplashScreenState extends State<SplashScreen> {
                     ),
                   ),
                 );
+              } else {
+                LogFileManager.writeLog(
+                  "Automatic login failed: invalid remembered credentials.",
+                );
+
+                await _logoutAndGoToLogin();
               }
             } else if (state is LoginErrorState) {
+              if (!mounted) return;
               setState(() => _isLoading = false);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => BlocProvider(
-                    create: (context) => MainBloc(webService: WebService()),
-                    child: const LoginScreen(),
-                  ),
-                ),
+              LogFileManager.writeLog(
+                "Automatic login failed with LoginErrorState.",
               );
+
+              await _logoutAndGoToLogin();
+              // Navigator.pushReplacement(
+              //   context,
+              //   MaterialPageRoute(
+              //     builder: (_) => BlocProvider(
+              //       create: (context) => MainBloc(webService: WebService()),
+              //       child: const LoginScreen(),
+              //     ),
+              //   ),
+              // );
             }
           },
           child: Stack(

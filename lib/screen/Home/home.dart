@@ -176,10 +176,23 @@ class _HomeScreenState extends State<HomeScreen> {
     await getData();
     await _checkAndRequestLocationPermission();
 
-    await _restorePunchState();
+    ///new changes
+    final nightShift = await isNightShift();
+    if (nightShift) {
+      // NIGHT SHIFT → SQLite state
+      await _restorePunchState();
+    } else {
+      // DAY SHIFT → existing date-wise API behavior
+      await _updateButtonInitialState();
+    }
+
+    ///old implementation of shiftchnage
+    //await _restorePunchState();
+
     //await _updateButtonInitialState();
   }
 
+  ///shiftwisechanges
   Future<void> _restorePunchState() async {
     if (staffCode == null || staffCode!.isEmpty) return;
 
@@ -301,6 +314,16 @@ class _HomeScreenState extends State<HomeScreen> {
       print("Error restoring latest punch from server: $e");
       return null;
     }
+  }
+
+  Future<bool> isNightShift() async {
+    final shiftDate = DateFormat('dd/MM/yyyy').format(DateTime.now());
+
+    final shiftType = await getShiftType(shiftDate);
+
+    print("Current shift type: $shiftType");
+
+    return shiftType?.toUpperCase() == "N";
   }
 
   Future<void> _checkauthorisation() async {
@@ -1057,7 +1080,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<String?> getShiftType(String date) async {
     try {
       final uri = Uri.parse(
-        'http://114.143.140.28:8020 /api/InOut/CheckShiftType',
+        'http://114.143.140.28:8020/api/InOut/CheckShiftType',
       ).replace(
         queryParameters: {
           'staffCode': staffCode!,
@@ -2063,6 +2086,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> updatePunchUI() async {
+    final nightShift = await isNightShift();
+
+    if (nightShift) {
+      await _updateButtonInitialsqliteState();
+    } else {
+      await _updateButtonInitialState();
+    }
+  }
+
   Future<void> punchIn() async {
     bool hasPermission = await handleLocationPermission();
 
@@ -2092,9 +2125,29 @@ class _HomeScreenState extends State<HomeScreen> {
         String currentDateTime = DateFormat('dd-MM-yyyy HH:mm:ss')
             .format(DateTime.now())
             .substring(0, 19);
-        // await retorepunchdata();
-        if (await getInEntryFromDataBase(
-            currentDate, currentTime, staffCode!)) {
+
+        ///shifychages
+        // if (await getInEntryFromDataBase(
+        //     currentDate, currentTime, staffCode!)) {
+        final nightShift = await isNightShift();
+
+        bool canPunchIn;
+
+        if (nightShift) {
+          final latestPunch =
+              await DatabaseHelper().getLatestPunchState(staffCode!);
+
+          canPunchIn =
+              latestPunch == null || latestPunch['flag_value'] == "000";
+        } else {
+          canPunchIn = await getInEntryFromDataBase(
+            currentDate,
+            currentTime,
+            staffCode!,
+          );
+        }
+
+        if (canPunchIn) {
           String? result = await storeInEntry(
               currentDate,
               currentDateTime,
@@ -2108,12 +2161,13 @@ class _HomeScreenState extends State<HomeScreen> {
           print("result $result");
 
           // After successful operation, show a SnackBar
-          setState(() {
-            isButtonDisabledIn = true;
-            isButtonDisabledOut = false;
-            //_updateButtonInitialsqliteState();
-          });
-          await _updateButtonInitialsqliteState();
+          // setState(() {
+          //   isButtonDisabledIn = true;
+          //   isButtonDisabledOut = false;
+          //   //_updateButtonInitialsqliteState();
+          // });
+          // await _updateButtonInitialsqliteState();
+          await updatePunchUI();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
                 content: const Text('Punch-in Successful!'),
@@ -2189,11 +2243,31 @@ class _HomeScreenState extends State<HomeScreen> {
                 .substring(0, 19);
 //if (await getOutEntryFromDataBase(currentDate, currentTime, staffCode!))
 //             await retorepunchdata();
-            if (await getInEntryFromDataBase(
-                currentDate, currentTime, staffCode!)) {
-              String shiftDate =
-                  DateFormat('dd/MM/yyyy').format(DateTime.now());
-              String? shiftType = await getShiftType(shiftDate);
+//             if (await getInEntryFromDataBase(
+//                 currentDate, currentTime, staffCode!)) {
+//               String shiftDate =
+//                   DateFormat('dd/MM/yyyy').format(DateTime.now());
+//               String? shiftType = await getShiftType(shiftDate);
+            ///shiftchnages
+            final nightShift = await isNightShift();
+
+            bool canPunchIn;
+
+            if (nightShift) {
+              final latestPunch =
+                  await DatabaseHelper().getLatestPunchState(staffCode!);
+
+              canPunchIn =
+                  latestPunch == null || latestPunch['flag_value'] == "000";
+            } else {
+              canPunchIn = await getInEntryFromDataBase(
+                currentDate,
+                currentTime,
+                staffCode!,
+              );
+            }
+
+            if (canPunchIn) {
               String? result = await storeInEntry(
                   currentDate,
                   currentDateTime,
@@ -2208,11 +2282,12 @@ class _HomeScreenState extends State<HomeScreen> {
               print(currentDateTime);
               print(_currentAddress);
               // After successful operation, show a SnackBar
-              setState(() {
-                isButtonDisabledIn = true;
-                isButtonDisabledOut = false;
-              });
-              await _updateButtonInitialsqliteState();
+              // setState(() {
+              //   isButtonDisabledIn = true;
+              //   isButtonDisabledOut = false;
+              // });
+              // await _updateButtonInitialsqliteState();
+              await updatePunchUI();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                     content: const Text('Punch-in Successful!'),
@@ -2342,10 +2417,30 @@ class _HomeScreenState extends State<HomeScreen> {
         //       _currentLat!,
         //       _currentLon!,
         //       plantcode?.toString() ?? "01");
-        final latestPunch =
-            await DatabaseHelper().getLatestPunchState(staffCode!);
+        ///shiftchanges
+        // final latestPunch =
+        //     await DatabaseHelper().getLatestPunchState(staffCode!);
+        //
+        // if (latestPunch != null && latestPunch['flag_value'] == "001") {
+        final nightShift = await isNightShift();
 
-        if (latestPunch != null && latestPunch['flag_value'] == "001") {
+        bool canPunchOut;
+
+        if (nightShift) {
+          final latestPunch =
+              await DatabaseHelper().getLatestPunchState(staffCode!);
+
+          canPunchOut =
+              latestPunch != null && latestPunch['flag_value'] == "001";
+        } else {
+          canPunchOut = await getOutEntryFromDataBase(
+            currentDate,
+            currentTime,
+            staffCode!,
+          );
+        }
+
+        if (canPunchOut) {
           String? result = await storeOutEntry(
               currentDate,
               currentDateTime,
@@ -2359,13 +2454,14 @@ class _HomeScreenState extends State<HomeScreen> {
           print("result $result");
 
           // After successful operation, show a SnackBar
-          setState(() {
-            isButtonDisabledIn = true;
-            isButtonDisabledOut = false;
-            //_updateButtonInitialsqliteState();
-            //_updateButtonInitialState();
-          });
-          await _updateButtonInitialsqliteState();
+          // setState(() {
+          //   isButtonDisabledIn = true;
+          //   isButtonDisabledOut = false;
+          //   //_updateButtonInitialsqliteState();
+          //   //_updateButtonInitialState();
+          // });
+          // await _updateButtonInitialsqliteState();
+          await updatePunchUI();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
                 content: const Text('Punch-out Successful!'),
@@ -2450,10 +2546,30 @@ class _HomeScreenState extends State<HomeScreen> {
             //       _currentLat!,
             //       _currentLon!,
             //       plantcode?.toString() ?? "01");
-            final latestPunch =
-                await DatabaseHelper().getLatestPunchState(staffCode!);
+            ///shiftchanges
+            // final latestPunch =
+            //     await DatabaseHelper().getLatestPunchState(staffCode!);
+            //
+            // if (latestPunch != null && latestPunch['flag_value'] == "001") {
+            final nightShift = await isNightShift();
 
-            if (latestPunch != null && latestPunch['flag_value'] == "001") {
+            bool canPunchOut;
+
+            if (nightShift) {
+              final latestPunch =
+                  await DatabaseHelper().getLatestPunchState(staffCode!);
+
+              canPunchOut =
+                  latestPunch != null && latestPunch['flag_value'] == "001";
+            } else {
+              canPunchOut = await getOutEntryFromDataBase(
+                currentDate,
+                currentTime,
+                staffCode!,
+              );
+            }
+
+            if (canPunchOut) {
               String? result = await storeOutEntry(
                   currentDate,
                   currentDateTime,
@@ -2464,13 +2580,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   _currentLon!,
                   plantcode?.toString() ?? "01");
 
-              setState(() {
-                isButtonDisabledOut = true;
-                isButtonDisabledIn = false;
-                //_updateButtonInitialsqliteState();
-                //_updateButtonInitialState();
-              });
-              await _updateButtonInitialsqliteState();
+              // setState(() {
+              //   isButtonDisabledOut = true;
+              //   isButtonDisabledIn = false;
+              //   //_updateButtonInitialsqliteState();
+              //   //_updateButtonInitialState();
+              // });
+              // await _updateButtonInitialsqliteState();
+              await updatePunchUI();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text('Punch-out Successful!'),
@@ -2670,17 +2787,31 @@ class _HomeScreenState extends State<HomeScreen> {
       if (response.statusCode == 201 || response.statusCode == 200) {
         LogFileManager.writeLog("storeinentry $response");
 
+        ///shiftchanges
+        // String shiftDate = DateFormat('dd/MM/yyyy').format(DateTime.now());
+        // String? shiftType = await getShiftType(shiftDate);
+        //
+        // await DatabaseHelper().insertPunchState(
+        //   staffCode: staffCode!,
+        //   transactionDate: TransactionDate,
+        //   transactionTime: TransactionTime,
+        //   flagValue: "001",
+        //   shiftDate: shiftDate,
+        //   shiftType: shiftType,
+        // );
         String shiftDate = DateFormat('dd/MM/yyyy').format(DateTime.now());
         String? shiftType = await getShiftType(shiftDate);
-        await DatabaseHelper().insertPunchState(
-          staffCode: staffCode!,
-          transactionDate: TransactionDate,
-          transactionTime: TransactionTime,
-          flagValue: "001",
-          shiftDate: shiftDate,
-          shiftType: shiftType,
-        );
 
+        if (shiftType?.toUpperCase() == "N") {
+          await DatabaseHelper().insertPunchState(
+            staffCode: staffCode!,
+            transactionDate: TransactionDate,
+            transactionTime: TransactionTime,
+            flagValue: "001",
+            shiftDate: shiftDate,
+            shiftType: shiftType,
+          );
+        }
         if (atsflag == 'Y') {
           try {
             final response = await http.post(
@@ -2758,23 +2889,45 @@ class _HomeScreenState extends State<HomeScreen> {
       print("punch-out response body" + response.body);
       print("punch-out response status code" + response.statusCode.toString());
       if (response.statusCode == 201 || response.statusCode == 200) {
+        ///shiftcanges
+        // final latestIn = await DatabaseHelper().getLatestPunchIn(staffCode!);
+        // String? shiftType = latestIn?['shift_type'];
+        // String? shiftDate = latestIn?['shift_date'];
+        // if ((shiftType == null || shiftType.isEmpty) &&
+        //     shiftDate != null &&
+        //     shiftDate.isNotEmpty) {
+        //   shiftType = await getShiftType(shiftDate);
+        // }
+        //
+        // await DatabaseHelper().insertPunchState(
+        //   staffCode: staffCode!,
+        //   transactionDate: TransactionDate,
+        //   transactionTime: TransactionTime,
+        //   flagValue: "000",
+        //   shiftDate: shiftDate,
+        //   shiftType: shiftType,
+        // );
         final latestIn = await DatabaseHelper().getLatestPunchIn(staffCode!);
+
         String? shiftType = latestIn?['shift_type'];
         String? shiftDate = latestIn?['shift_date'];
+
         if ((shiftType == null || shiftType.isEmpty) &&
             shiftDate != null &&
             shiftDate.isNotEmpty) {
           shiftType = await getShiftType(shiftDate);
         }
 
-        await DatabaseHelper().insertPunchState(
-          staffCode: staffCode!,
-          transactionDate: TransactionDate,
-          transactionTime: TransactionTime,
-          flagValue: "000",
-          shiftDate: shiftDate,
-          shiftType: shiftType,
-        );
+        if (shiftType?.toUpperCase() == "N") {
+          await DatabaseHelper().insertPunchState(
+            staffCode: staffCode!,
+            transactionDate: TransactionDate,
+            transactionTime: TransactionTime,
+            flagValue: "000",
+            shiftDate: shiftDate,
+            shiftType: shiftType,
+          );
+        }
 
         LogFileManager.writeLog("storeoutentry $response");
         if (atsflag == 'Y') {
@@ -3380,7 +3533,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _updateButtonInitialsqliteState() async {
+  ///shiftchange new
+/*  Future<void> _updateButtonInitialsqliteState() async {
     if (staffCode == null || staffCode!.isEmpty) return;
 
     final dbHelper = DatabaseHelper();
@@ -3444,8 +3598,8 @@ class _HomeScreenState extends State<HomeScreen> {
         lastPunchOut = false;
       }
     });
-  }
-/*  Future<void> _updateButtonInitialsqliteState() async {
+  }*/
+  Future<void> _updateButtonInitialsqliteState() async {
     if (staffCode == null || staffCode!.isEmpty) return;
 
     final dbHelper = DatabaseHelper();
@@ -3454,10 +3608,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final latestIn = await dbHelper.getLatestPunchIn(staffCode!);
     final latestOut = await dbHelper.getLatestPunchOut(staffCode!);
 
-    // Safely extract only time from any format:
-    // 15:32:00
-    // 02/09/2026 15:32:00
-    // 02-09-2026 15:32:00
     String extractTime(dynamic value) {
       if (value == null) return "-";
 
@@ -3465,12 +3615,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (text.isEmpty) return "-";
 
-      // If date + time is present, take everything after the last space
       if (text.contains(' ')) {
         return text.split(RegExp(r'\s+')).last;
       }
 
-      // Already only time
       return text;
     }
 
@@ -3483,88 +3631,30 @@ class _HomeScreenState extends State<HomeScreen> {
       if (latestPunch == null) {
         isButtonDisabledIn = false;
         isButtonDisabledOut = true;
+
+        lastPunchIn = true;
+        lastPunchOut = true;
+
         return;
       }
 
       final flagValue = latestPunch['flag_value'];
 
       if (flagValue == "001") {
-        // Currently IN
         isButtonDisabledIn = true;
         isButtonDisabledOut = false;
+
+        lastPunchIn = false;
+        lastPunchOut = true;
       } else if (flagValue == "000") {
-        // Currently OUT
         isButtonDisabledIn = false;
         isButtonDisabledOut = true;
+
+        lastPunchIn = true;
+        lastPunchOut = false;
       }
     });
-  }*/
-// Future<void> _updateButtonInitialsqliteState() async {
-//   if (staffCode == null || staffCode!.isEmpty) return;
-//
-//   final dbHelper = DatabaseHelper();
-//
-//   final latestPunch = await dbHelper.getLatestPunchState(staffCode!);
-//
-//   final latestIn = await dbHelper.getLatestPunchIn(staffCode!);
-//
-//   final latestOut = await dbHelper.getLatestPunchOut(staffCode!);
-//
-//   if (!mounted) return;
-//   setState(() {
-//     lastInTime = latestIn?['transaction_time'] != null
-//         ? latestIn!['transaction_time'].toString().substring(11, 19)
-//         : "-";
-//
-//     lastOutTime = latestOut?['transaction_time'] != null
-//         ? latestOut!['transaction_time'].toString().substring(11, 19)
-//         : "-";
-//
-//     // Button state is based ONLY on latest transaction
-//     if (latestPunch == null) {
-//       isButtonDisabledIn = false;
-//       isButtonDisabledOut = true;
-//       return;
-//     }
-//
-//     final flagValue = latestPunch['flag_value'];
-//
-//     if (flagValue == "001") {
-//       // Currently punched IN
-//       isButtonDisabledIn = true;
-//       isButtonDisabledOut = false;
-//     } else if (flagValue == "000") {
-//       // Currently punched OUT
-//       isButtonDisabledIn = false;
-//       isButtonDisabledOut = true;
-//     }
-//   });
-//
-//   // setState(() {
-//   //   // Display latest IN and OUT independently
-//   //   lastInTime = latestIn?['transaction_time'] ?? "-";
-//   //   lastOutTime = latestOut?['transaction_time'] ?? "-";
-//   //
-//   //   // Button state is based ONLY on latest transaction
-//   //   if (latestPunch == null) {
-//   //     isButtonDisabledIn = false;
-//   //     isButtonDisabledOut = true;
-//   //     return;
-//   //   }
-//   //
-//   //   final flagValue = latestPunch['flag_value'];
-//   //
-//   //   if (flagValue == "001") {
-//   //     // Currently punched IN
-//   //     isButtonDisabledIn = true;
-//   //     isButtonDisabledOut = false;
-//   //   } else if (flagValue == "000") {
-//   //     // Currently punched OUT
-//   //     isButtonDisabledIn = false;
-//   //     isButtonDisabledOut = true;
-//   //   }
-//   // });
-// }
+  }
 }
 
 class _BannerItem {

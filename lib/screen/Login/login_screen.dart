@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:attendance_system_ios/bloc/main_bloc.dart';
 import 'package:attendance_system_ios/bloc/main_event.dart';
 import 'package:attendance_system_ios/bloc/main_state.dart';
@@ -43,6 +45,7 @@ class _LoginScreenState extends State<LoginScreen> {
   TextEditingController _CardIdtextController = TextEditingController();
   TextEditingController _PasswordtextController = TextEditingController();
   String? mdeviceId = "";
+  static const MethodChannel _channel = MethodChannel('com.example/device_id');
 
   bool isAdminLogin = false;
   LocalAuthentication auth = LocalAuthentication();
@@ -100,22 +103,41 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<String?> _getId() async {
-    DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-    AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-    print(androidInfo.id);
-    return androidInfo.id; // This should return ANDROID_ID
+    try {
+      if (Platform.isAndroid) {
+        final String? result =
+            await _channel.invokeMethod<String>('getAndroidId');
 
-    // var deviceInfo = DeviceInfoPlugin();
-    // if (Platform.isIOS) { // import 'dart:io'
-    //   var iosDeviceInfo = await deviceInfo.iosInfo;
-    //   return iosDeviceInfo.identifierForVendor; // unique ID on iOS
-    // } else if(Platform.isAndroid) {
-    //   var androidDeviceInfo = await deviceInfo.androidInfo;
-    //   print("androidDeviceInfo "+androidDeviceInfo.toString());
-    //   print("AndroidId... "+AndroidId().getId().toString());
-    //
-    //   return AndroidId().getId(); // unique ID on Android
-    // }
+        print("Android Device ID: $result");
+        LogFileManager.writeLog("Android Device ID: $result");
+
+        return result;
+      }
+
+      if (Platform.isIOS) {
+        DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+        IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+
+        final String? deviceId = iosInfo.identifierForVendor;
+
+        print("iOS Device ID: $deviceId");
+        LogFileManager.writeLog("iOS Device ID: $deviceId");
+
+        return deviceId;
+      }
+
+      return null;
+    } on PlatformException catch (e) {
+      print("Failed to get Device ID: ${e.message}");
+      LogFileManager.writeLog("Failed to get Device ID: ${e.message}");
+
+      return null;
+    } catch (e) {
+      print("Error getting Device ID: $e");
+      LogFileManager.writeLog("Error getting Device ID: $e");
+
+      return null;
+    }
   }
 
   @override
@@ -129,14 +151,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   _loginscreen() {
     return LoadingOverlay(
-      isLoading: _isLoading,
-      opacity: 0.5,
-      color: Colors.white,
-      progressIndicator: CircularProgressIndicator(
-        backgroundColor: Color(0xFFCE4A6F),
-        valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
-      ),
-      child: BlocListener<MainBloc, MainState>(
+        isLoading: _isLoading,
+        opacity: 0.5,
+        color: Colors.white,
+        progressIndicator: CircularProgressIndicator(
+          backgroundColor: Color(0xFFCE4A6F),
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
+        ),
+        child: BlocListener<MainBloc, MainState>(
           listener: (context, state) async {
             if (state is LoginLoadingState) {
               setState(() {
@@ -148,11 +170,6 @@ class _LoginScreenState extends State<LoginScreen> {
               });
               if (state.loginResponse?.message != null) {
                 print("Login successfull!!!");
-                // Fluttertoast.showToast(
-                //   msg: "   Login Successfully...!   ",
-                //   toastLength: Toast.LENGTH_SHORT,
-                //   timeInSecForIosWeb: 1,
-                // );
 
                 // Store Auth Token and other details
                 await storage.write(
@@ -187,45 +204,88 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   );
-                } else {
-                  await checkBiometrics();
                 }
-                // else {
-                //   // For user login, verify device ID
-                //   String? responseDeviceId =state.loginResponse!.message!.uuid;
-                //   print("Database response Device Id: ${state.loginResponse!.message!.uuid}");
-                //   print("Current device Id: ${AndroidId().getId()}");// Device ID from response
-                //   String? deviceId= await   _getId();
-                //   print("deviceIdddd: ${deviceId}");// Device ID from response
-                //   await checkBiometrics();
-                //    if (responseDeviceId == deviceId) {
-                //     Fluttertoast.showToast(
-                //       msg: "   Login Successfully...!   ",
-                //       toastLength: Toast.LENGTH_SHORT,
-                //       timeInSecForIosWeb: 1,
-                //     );
-                //     // Navigate to User Home Screen
-                //     Navigator.pushReplacement(
-                //       context,
-                //       MaterialPageRoute(
-                //         builder: (_) => BlocProvider(
-                //           create: (context) {
-                //             return MainBloc(webService: WebService());
-                //           },
-                //           child: HomeScreen(),
-                //         ),
-                //       ),
-                //     );
-                //   await checkBiometrics();
-                //   }
-                //    else if(false) {
-                //     Fluttertoast.showToast(
-                //       msg: 'Please Login from Registered Device',
-                //       toastLength: Toast.LENGTH_SHORT,
-                //       timeInSecForIosWeb: 2,
-                //     );
-                //   }
-                // }
+                       else {
+                  // User login - check registered device UUID
+                  String? responseDeviceId = state.loginResponse!.message!.uuid;
+
+                  String? staffCode = state.loginResponse!.message!.staffCode;
+
+                  print("Database response Device Id: $responseDeviceId");
+                  LogFileManager.writeLog(
+                      "Database response Device Id: $responseDeviceId");
+
+                  // Get current device ID
+                  String? currentDeviceId = await _getId();
+
+                  print("Current device Id: $currentDeviceId");
+                  LogFileManager.writeLog(
+                      "Current device Id: $currentDeviceId");
+
+                  // Safety check - unable to get device ID
+                  if (currentDeviceId == null ||
+                      currentDeviceId.trim().isEmpty) {
+                    print("Unable to get current device ID.");
+                    LogFileManager.writeLog("Unable to get current device ID.");
+
+                    Fluttertoast.showToast(
+                      msg: "Unable to identify this device.",
+                      toastLength: Toast.LENGTH_LONG,
+                    );
+
+                    return;
+                  }
+
+                  // UUID is empty/null
+                  // This means the user has not registered a device yet.
+                  if (responseDeviceId == null ||
+                      responseDeviceId.trim().isEmpty) {
+                    print("UUID is empty. Registering current device.");
+                    LogFileManager.writeLog(
+                        "UUID is empty. Registering current device.");
+
+                    // Update UUID using existing UpdateUUID API
+                    _mainBloc.add(
+                      UpdateUUID(
+                        UserId: staffCode!,
+                        UUID: currentDeviceId,
+                        UUIDFlag: "Y",
+                      ),
+                    );
+
+                    // Continue login immediately, same as previous behavior
+                    print("Proceeding with biometric authentication.");
+                    LogFileManager.writeLog(
+                        "Proceeding with biometric authentication.");
+
+                    await checkBiometrics();
+                  }
+
+                  // UUID exists and matches current device
+                  else if (responseDeviceId == currentDeviceId) {
+                    print("Device ID validation passed.");
+                    LogFileManager.writeLog("Device ID validation passed.");
+
+                    await checkBiometrics();
+                  }
+
+                  // UUID exists but belongs to another device
+                  else {
+                    print("Device ID validation failed.");
+                    LogFileManager.writeLog("Device ID validation failed. "
+                        "Registered Device: $responseDeviceId, "
+                        "Current Device: $currentDeviceId");
+
+                    Fluttertoast.showToast(
+                      msg: "Login using registered device",
+                      toastLength: Toast.LENGTH_LONG,
+                      timeInSecForIosWeb: 1,
+                    );
+                  }
+                }
+              /*  else {
+                  await checkBiometrics();
+                }*/
               } else {
                 // uncomment if login gives the issue in second time login
                 storage.delete(key: 'username');
@@ -238,8 +298,30 @@ class _LoginScreenState extends State<LoginScreen> {
                 _isLoading = false;
               });
             }
+
+            if (state is updateUUIDLoadedState) {
+              if (state.apiresponsee.message == "UUID updated successfully.") {
+                print("UUID updated successfully during login.");
+
+                LogFileManager.writeLog(
+                    "UUID updated successfully during login.");
+
+                await checkBiometrics();
+              } else {
+                print("UUID update failed during login.");
+
+                LogFileManager.writeLog("UUID update failed during login: "
+                    "${state.apiresponsee.message}");
+
+                Fluttertoast.showToast(
+                  msg: "Unable to register this device. Please try again.",
+                  toastLength: Toast.LENGTH_LONG,
+                );
+              }
+            }
           },
-          child: CustomScrollView(
+          child: SafeArea(
+              child: CustomScrollView(
             slivers: [
               SliverFillRemaining(
                   hasScrollBody: false,
@@ -255,8 +337,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               width: 100,
                               height: 110,
                             ),
-                            const SizedBox(height: 12),
-                            const Text(
+                            SizedBox(height: 12),
+                            Text(
                               "Attendance System",
                               style: TextStyle(
                                 fontSize: 22,
@@ -265,7 +347,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                             SizedBox(height: 6),
-                            const Text(
+                            Text(
                               "Sign in to continue",
                               style: TextStyle(
                                 fontSize: 14,
@@ -285,7 +367,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(height: 5),
                         const SizedBox(height: 30),
-
                         Padding(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 32, vertical: 12),
@@ -372,62 +453,85 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-
-                        Padding(padding: const EdgeInsets.all(12),
-                        child: Row(
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const PasswordRetrieval()),
+                                  );
+                                },
+                                child: const Text("Password\nRetrieval"),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => const ForgotPassword()),
+                                  );
+                                },
+                                child: const Text(
+                                    " Forgot Password?\n(only for operators) "),
+                              ),
+                              // const SizedBox(width: 10),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => const RegisterScreen()),
+                                  );
+                                },
+                                child: const Text("Register"),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) =>
-                                      const PasswordRetrieval()),
-                                );
-                              },
-                              child: const Text("Password\nRetrieval"),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const ForgotPassword()),
-                                );
-                              },
-                              child: const Text(
-                                  " Forgot Password?\n(only for operators) "),
-                            ),
-                            // const SizedBox(width: 10),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const RegisterScreen()),
-                                );
-                              },
-                              child: const Text("Register"),
-                            ),
+                                onPressed: () {
+                                  Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (context) =>
+                                              Updatedeviceid()));
+                                  //Navigator.push(context, MaterialPageRoute(builder: (context)=> Updatedeviceidnew()));
+                                },
+                                child: const Text(
+                                    'Switched To New Device?Register New Device Here!'))
                           ],
-                        ),
-                        ),
-
-                        const SizedBox(height: 20,),
-                        Center(
-                          child:
-                            TextButton(onPressed: (){
-                              Navigator.push(context, MaterialPageRoute(builder: (context)=> const Updatedeviceid()));
-                              //Navigator.push(context, MaterialPageRoute(builder: (context)=> Updatedeviceidnew()));
-                            },
-                                child: const Text('Switched To New Device?Register New Device Here!'))
-
                         )
-
                       ])),
             ],
           )),
+        ));
+  }
+
+  Future<void> _updateUuidAndProceed(
+      String staffCode, String currentDeviceId) async {
+    print("UUID is empty. Updating UUID for staff: $staffCode");
+    print("New UUID: $currentDeviceId");
+
+    LogFileManager.writeLog(
+        "UUID is empty. Updating UUID for staff: $staffCode");
+
+    LogFileManager.writeLog("New UUID: $currentDeviceId");
+
+    _mainBloc.add(
+      UpdateUUID(
+        UserId: staffCode,
+        UUID: currentDeviceId,
+        UUIDFlag: "Y",
+      ),
     );
   }
 
@@ -481,13 +585,6 @@ class _LoginScreenState extends State<LoginScreen> {
       storage.delete(key: 'password');
     }
   }
-
-  Future<void> checkDeviceId() async {
-    final deviceInfo = DeviceInfoPlugin();
-
-    await checkBiometrics();
-  }
-
 
   Future<void> checkBiometrics() async {
     try {

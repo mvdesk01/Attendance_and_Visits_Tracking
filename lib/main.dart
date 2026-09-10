@@ -136,60 +136,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // @override
-  // void didChangeAppLifecycleState(AppLifecycleState state) {
-  //   if (state == AppLifecycleState.paused) {
-  //     _startLogoutTimer();
-  //   } else if (state == AppLifecycleState.resumed) {
-  //     if (_inactivityTimer?.isActive == false) {
-  //       _logoutUser();
-  //     } else {
-  //       _resetInactivityTimer();
-  //     }
-  //   }
-  // }
-
-  // void _resetInactivityTimer() {
-  //   _inactivityTimer?.cancel();
-  //   _inactivityTimer = Timer(Duration(minutes: 30), _logoutUser);
-  // }
-  // @override
-  // void didChangeAppLifecycleState(AppLifecycleState state) {
-  //   if (state == AppLifecycleState.paused) {
-  //     _lastActiveTime = DateTime.now();
-  //     _startLogoutTimer();
-  //   } else if (state == AppLifecycleState.resumed) {
-  //     final now = DateTime.now();
-  //     if (_lastActiveTime != null &&
-  //         now.difference(_lastActiveTime!).inMinutes > 30) {
-  //       _logoutUser();
-  //     } else {
-  //       _resetInactivityTimer();
-  //     }
-  //   }
-  // }
-  //
-  // void _resetInactivityTimer() {
-  //   _lastActiveTime = DateTime.now();
-  //   _inactivityTimer?.cancel();
-  //   _inactivityTimer = Timer(const Duration(minutes: 30), _logoutUser);
-  // }
-  //
-  // void _startLogoutTimer() {
-  //   _inactivityTimer?.cancel();
-  //   _inactivityTimer = Timer(Duration(minutes: 30), _logoutUser);
-  // }
-
-  // void _logoutUser() {
-  //   _inactivityTimer?.cancel();
-  //     isloggedIn=true;
-  //   MyApp.navigatorKey.currentState?.pushAndRemoveUntil(
-  //
-  //     MaterialPageRoute(builder: (context) => SplashScreen()),
-  //         (Route<dynamic> route) => false, // Clears all previous routes
-  //   );
-  // }
-
   @override
   Widget build(BuildContext context) {
     return BlocProvider(

@@ -28,10 +28,32 @@ class MomRepositoryImpl implements MomRepository {
 
   ///customer
   @override
+  // Future<List<Customer>> getCustomers({
+  //   required String userName,
+  //   bool forceRefresh = false,
+  // }) async {
+  //   if (!forceRefresh) {
+  //     final cachedCustomers = await localDatasource.getCachedCustomers();
+  //
+  //     if (cachedCustomers.isNotEmpty) {
+  //       return cachedCustomers;
+  //     }
+  //   }
+  //
+  //   final customers = await remoteDatasource.getCustomers(
+  //     userName: userName,
+  //   );
+  //
+  //   await localDatasource.cacheCustomers(customers);
+  //
+  //   return customers;
+  // }
+  @override
   Future<List<Customer>> getCustomers({
     required String userName,
     bool forceRefresh = false,
   }) async {
+    // If not forcing refresh, first try cached data
     if (!forceRefresh) {
       final cachedCustomers = await localDatasource.getCachedCustomers();
 
@@ -40,13 +62,35 @@ class MomRepositoryImpl implements MomRepository {
       }
     }
 
-    final customers = await remoteDatasource.getCustomers(
-      userName: userName,
-    );
+    try {
+      // Always try API when:
+      // 1. forceRefresh == true
+      // 2. cache is empty
+      final customers = await remoteDatasource.getCustomers(
+        userName: userName,
+      );
 
-    await localDatasource.cacheCustomers(customers);
+      // IMPORTANT:
+      // Replace old cache with the latest API list
+      await localDatasource.cacheCustomers(customers);
 
-    return customers;
+      return customers;
+    } catch (e) {
+      // API unavailable → fall back to cached data
+      final cachedCustomers = await localDatasource.getCachedCustomers();
+
+      if (cachedCustomers.isNotEmpty) {
+        print(
+          "Customer API failed. Using cached customers: "
+          "${cachedCustomers.length}",
+        );
+
+        return cachedCustomers;
+      }
+
+      // Nothing cached either, so let the original error reach notifier
+      rethrow;
+    }
   }
 
   @override
@@ -158,6 +202,14 @@ class MomRepositoryImpl implements MomRepository {
       );
 
       meetingSaved = meetingMessage.toLowerCase().contains("success");
+      if (!meetingSaved) {
+        return SubmitMeetingResult(
+          meetingSaved: false,
+          pointsSaved: false,
+          meetingMessage: meetingMessage,
+          pointMessages: pointMessages,
+        );
+      }
 
       /// -------------------------
       /// Save Discussion Points
